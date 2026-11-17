@@ -9,6 +9,7 @@ import { loadConfig } from './config/configuration';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { ClassificationModule } from './modules/classification/classification.module';
+import { DashboardModule } from './modules/dashboard/dashboard.module';
 import { HealthModule } from './modules/health/health.module';
 import { JobsModule } from './modules/jobs/jobs.module';
 import { ReviewModule } from './modules/review/review.module';
@@ -50,6 +51,7 @@ const config = loadConfig();
     AuthModule,
     AccountsModule,
     ClassificationModule,
+    DashboardModule,
     ReviewModule,
     JobsModule,
     TransactionsModule,

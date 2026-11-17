@@ -21,6 +21,12 @@ export const CATEGORIES = [
   'TAX',
   'TRANSFERS',
   'BANKING_FEES',
+  // Beyond the categories named in the brief: a large share of real Nigerian
+  // business spend is capital equipment and professional services, and
+  // dropping both into "Other" makes the dashboard useless for exactly the
+  // costs a finance team wants to see.
+  'EQUIPMENT',
+  'PROFESSIONAL_SERVICES',
   'OTHER',
 ] as const;
 export type Category = (typeof CATEGORIES)[number];
@@ -40,6 +46,8 @@ export const CATEGORY_LABELS: Record<Category, string> = {
   TAX: 'Tax',
   TRANSFERS: 'Transfers',
   BANKING_FEES: 'Banking Fees',
+  EQUIPMENT: 'Equipment',
+  PROFESSIONAL_SERVICES: 'Professional Services',
   OTHER: 'Other',
 };
 

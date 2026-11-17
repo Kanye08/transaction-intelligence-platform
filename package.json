@@ -14,12 +14,7 @@
   "scripts": {
     "postinstall": "node scripts/ensure-env.mjs && npm run prisma:generate",
     "prisma:generate": "prisma generate --schema backend/prisma/schema.prisma",
-    "setup": "node scripts/ensure-env.mjs && npm run db:migrate && npm run db:seed && npm run build",
-    "db:migrate": "prisma migrate deploy --schema backend/prisma/schema.prisma",
-    "db:reset": "prisma migrate reset --force --schema backend/prisma/schema.prisma && npm run db:seed",
-    "db:seed": "tsx backend/prisma/seed.ts",
-    "db:studio": "prisma studio --schema backend/prisma/schema.prisma",
-    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "setup": "node scripts/ensure-env.mjs && npm run db:migrate && npm run build && npm run db:seed && npm run db:classify",
     "start": "cross-env NODE_ENV=production node backend/dist/main.js",
     "dev": "concurrently -n api,web -c cyan,magenta \"npm:dev:api\" \"npm:dev:web\"",
     "dev:api": "npm run start:dev --workspace backend",
@@ -27,7 +22,13 @@
     "test": "npm run test --workspace backend",
     "test:unit": "npm run test:unit --workspace backend",
     "test:e2e": "npm run test:e2e --workspace backend",
-    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend"
+    "typecheck": "npm run typecheck --workspace backend && npm run typecheck --workspace frontend",
+    "build": "npm run build --workspace backend && npm run build --workspace frontend",
+    "db:migrate": "prisma migrate deploy --schema backend/prisma/schema.prisma",
+    "db:seed": "tsx backend/prisma/seed.ts",
+    "db:classify": "node backend/dist/scripts/process-jobs.js",
+    "db:reset": "prisma migrate reset --force --schema backend/prisma/schema.prisma && npm run build --workspace backend && npm run db:seed && npm run db:classify",
+    "db:studio": "prisma studio --schema backend/prisma/schema.prisma"
   },
   "devDependencies": {
     "concurrently": "^9.1.2",

@@ -42,6 +42,12 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
       // Several PRAGMAs return a row, so all of them go through queryRaw.
       await this.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
       await this.$queryRawUnsafe('PRAGMA busy_timeout = 5000;');
+      // With WAL, NORMAL keeps durability against process crashes and only
+      // risks the last commits on an OS-level crash, in exchange for not
+      // fsyncing on every commit. For a local development database driving
+      // thousands of seeded jobs that trade is clearly worth it; a production
+      // PostgreSQL deployment has nothing equivalent to tune here.
+      await this.$queryRawUnsafe('PRAGMA synchronous = NORMAL;');
       await this.$queryRawUnsafe('PRAGMA foreign_keys = ON;');
     } catch (error) {
       this.logger.warn(`Could not apply SQLite pragmas: ${(error as Error).message}`);

@@ -18,14 +18,14 @@ export const MOCK_LLM_PROVIDER_VERSION = 'mock-gpt-1.0';
 const SEMANTIC_HINTS: { pattern: RegExp; category: Category; confidence: number; reason: string }[] = [
   {
     pattern: /(laptop|macbook|monitor|office chair|printer|equipment|furniture)/i,
-    category: 'OTHER',
-    confidence: 0.72,
+    category: 'EQUIPMENT',
+    confidence: 0.82,
     reason: 'Reads as an equipment or office purchase rather than a recurring expense',
   },
   {
     pattern: /(consultant|retainer|legal fee|audit fee|accounting service|professional service)/i,
-    category: 'OTHER',
-    confidence: 0.68,
+    category: 'PROFESSIONAL_SERVICES',
+    confidence: 0.81,
     reason: 'Appears to be a professional services engagement',
   },
   {

@@ -35,7 +35,7 @@ interface TransactionRow {
 }
 
 /** History window used for the statistical rules. Bounded on purpose. */
-const HISTORY_LIMIT = 200;
+const HISTORY_LIMIT = 120;
 
 /**
  * Transaction review: four independent detectors.
@@ -202,7 +202,11 @@ export class ReviewDetectionService {
     const confidence = transaction.confidence;
 
     if (confidence === null) return null;
-    if (confidence >= threshold && transaction.classificationStatus !== 'PROVISIONAL') return null;
+    // Confidence alone decides. A PROVISIONAL status at, say, 0.68 is a
+    // reasonable answer that simply fell short of the auto-accept bar; only
+    // genuinely weak answers are worth a person's time, or the queue fills
+    // with noise and gets ignored - which is worse than having no queue.
+    if (confidence >= threshold) return null;
 
     return {
       rule: 'LOW_CONFIDENCE',

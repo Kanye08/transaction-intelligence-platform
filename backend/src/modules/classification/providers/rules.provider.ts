@@ -196,6 +196,24 @@ const RULES: Rule[] = [
     explanation: 'Payment-processor fee',
   },
   {
+    id: 'equipment',
+    keywords: [
+      'equipment purchase',
+      'compressor',
+      'generator purchase',
+      'machinery',
+      'packaging materials',
+      'spare parts',
+      'laptop',
+      'furniture purchase',
+      'forklift',
+    ],
+    category: 'EQUIPMENT',
+    confidence: 0.86,
+    direction: 'OUTFLOW',
+    explanation: 'Purchase of equipment or capital items',
+  },
+  {
     id: 'transfers',
     keywords: [
       'transfer to own account',
@@ -219,6 +237,13 @@ const AMBIGUOUS: Rule[] = [
     category: 'OTHER',
     confidence: 0.42,
     explanation: 'Online marketplace purchase - could be equipment, supplies or marketing',
+  },
+  {
+    id: 'ambiguous-professional-services',
+    keywords: ['consultant', 'retainer', 'legal fee', 'audit fee', 'advisory', 'professional service'],
+    category: 'PROFESSIONAL_SERVICES',
+    confidence: 0.58,
+    explanation: 'Looks like a professional engagement, but the scope is unclear from the description',
   },
   {
     id: 'ambiguous-bank-transfer',

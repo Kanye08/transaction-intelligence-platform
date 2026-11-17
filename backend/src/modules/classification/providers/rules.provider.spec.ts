@@ -88,7 +88,7 @@ describe('parseProviderResult', () => {
     expect(result).toMatchObject({ category: 'SOFTWARE', confidence: 0.9, source: 'LLM' });
   });
 
-  it.each([
+  const malformed: [unknown, string][] = [
     [{ category: 'CRYPTO_SPECULATION', confidence: 0.9 }, 'an invented category'],
     [{ category: 'SOFTWARE', confidence: 'very high' }, 'a non-numeric confidence'],
     [{ category: 'SOFTWARE', confidence: 1.4 }, 'an out-of-range confidence'],
@@ -96,7 +96,9 @@ describe('parseProviderResult', () => {
     [{ confidence: 0.5 }, 'a missing category'],
     ['Looks like software to me', 'prose instead of JSON'],
     [null, 'a null response'],
-  ])('rejects %j (%s)', (payload) => {
+  ];
+
+  it.each(malformed)('rejects %j (%s)', (payload) => {
     expect(() => parseProviderResult(payload, 'mock-llm', '1.0', 'LLM')).toThrow(
       InvalidProviderResponseError,
     );

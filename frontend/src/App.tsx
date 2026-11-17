@@ -1,36 +1,76 @@
-import { useEffect, useState } from 'react';
+import { BrowserRouter, Navigate, NavLink, Route, Routes } from 'react-router-dom';
 
-interface Health {
-  status: string;
-  database: string;
-  uptimeSeconds: number;
-}
+import { AuthProvider, useAuth } from './auth/AuthContext';
+import { Spinner } from './components/ui';
+import { DashboardPage } from './pages/DashboardPage';
+import { LoginPage } from './pages/LoginPage';
+import { ReviewPage } from './pages/ReviewPage';
+import { TransactionsPage } from './pages/TransactionsPage';
 
-/**
- * Phase 1 shell: proves the frontend is wired to the real API.
- * Replaced by the login / dashboard / transactions / review screens.
- */
-export function App() {
-  const [health, setHealth] = useState<Health | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    fetch('/api/health')
-      .then((res) => res.json())
-      .then(setHealth)
-      .catch((err: Error) => setError(err.message));
-  }, []);
+function Shell() {
+  const { user, logout } = useAuth();
+  if (!user) return null;
 
   return (
-    <main className="shell">
-      <h1>Sycamore Transaction Intelligence</h1>
-      {error && <p className="error">API unreachable: {error}</p>}
-      {!error && !health && <p>Checking API…</p>}
-      {health && (
-        <p>
-          API status: <strong>{health.status}</strong> · database: <strong>{health.database}</strong>
-        </p>
-      )}
-    </main>
+    <div className="shell">
+      <header className="topbar">
+        <div className="topbar__brand">
+          <span className="topbar__mark">S</span>
+          <div>
+            <strong>Transaction Intelligence</strong>
+            <span className="muted">{user.organisation.name}</span>
+          </div>
+        </div>
+
+        <nav className="topbar__nav">
+          <NavLink to="/dashboard">Dashboard</NavLink>
+          <NavLink to="/transactions">Transactions</NavLink>
+          <NavLink to="/review">Review</NavLink>
+        </nav>
+
+        <div className="topbar__user">
+          <span>
+            {user.name}
+            <span className="muted"> · {user.role.toLowerCase()}</span>
+          </span>
+          <button type="button" className="btn btn--ghost btn--sm" onClick={logout}>
+            Sign out
+          </button>
+        </div>
+      </header>
+
+      <main>
+        <Routes>
+          <Route path="/dashboard" element={<DashboardPage />} />
+          <Route path="/transactions" element={<TransactionsPage />} />
+          <Route path="/review" element={<ReviewPage />} />
+          <Route path="*" element={<Navigate to="/dashboard" replace />} />
+        </Routes>
+      </main>
+    </div>
+  );
+}
+
+function Gate() {
+  const { user, loading } = useAuth();
+
+  if (loading) {
+    return (
+      <div className="boot">
+        <Spinner label="Starting" />
+      </div>
+    );
+  }
+
+  return user ? <Shell /> : <LoginPage />;
+}
+
+export function App() {
+  return (
+    <AuthProvider>
+      <BrowserRouter>
+        <Gate />
+      </BrowserRouter>
+    </AuthProvider>
   );
 }
