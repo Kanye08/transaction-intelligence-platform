@@ -16,10 +16,15 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     super({
+      // Expected constraint violations (duplicate ingestion, idempotent flag
+      // creation) are handled in code, so Prisma's own error logging is noise
+      // during tests. PRISMA_LOG=query turns on statement logging when needed.
       log:
         process.env.PRISMA_LOG === 'query'
           ? [{ emit: 'stdout', level: 'query' }]
-          : [{ emit: 'stdout', level: 'warn' }, { emit: 'stdout', level: 'error' }],
+          : process.env.NODE_ENV === 'test'
+            ? []
+            : [{ emit: 'stdout', level: 'warn' }, { emit: 'stdout', level: 'error' }],
     });
   }
 
