@@ -1,0 +1,20 @@
+node_modules/
+dist/
+build/
+coverage/
+.env
+*.db
+*.db-journal
+*.log
+.DS_Store
+backend/prisma/*.db
+backend/prisma/*.db-journal
+test-*.db
+
+# SQLite side-car files
+*.db-shm
+*.db-wal
+
+# Local scratch files that are not part of the deliverable
+Sycamore Technical Assessment.pdf
+/index.html

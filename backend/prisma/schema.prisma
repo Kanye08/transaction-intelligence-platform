@@ -1,0 +1,221 @@
+// ---------------------------------------------------------------------------
+// Transaction Intelligence Platform - data model
+//
+// Design notes
+//  * Money is stored as integer minor units (kobo) in BigInt columns. No
+//    floating point value is ever persisted or used in arithmetic.
+//  * Every tenant-owned row carries organisationId; isolation is enforced in
+//    the data-access layer and backed by indexes + foreign keys here.
+//  * SQLite does not support native Prisma enums, so status columns are
+//    strings constrained by CHECK constraints added in the initial migration
+//    and by TypeScript union types in src/common/domain. On PostgreSQL these
+//    would become real enum types.
+// ---------------------------------------------------------------------------
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "sqlite"
+  url      = env("DATABASE_URL")
+}
+
+model Organisation {
+  id        String   @id @default(cuid())
+  name      String
+  slug      String   @unique
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  users                User[]
+  accounts             Account[]
+  transactions         Transaction[]
+  classificationEvents ClassificationEvent[]
+  reviewFlags          ReviewFlag[]
+  jobs                 Job[]
+  idempotencyRecords   IdempotencyRecord[]
+
+  @@map("organisations")
+}
+
+model User {
+  id             String   @id @default(cuid())
+  organisationId String
+  email          String   @unique
+  name           String
+  passwordHash   String
+  role           String   @default("MEMBER") // OWNER | MEMBER
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation         Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  classificationEvents ClassificationEvent[] @relation("ClassificationActor")
+  resolvedFlags        ReviewFlag[]          @relation("ReviewFlagResolver")
+
+  @@index([organisationId])
+  @@map("users")
+}
+
+model Account {
+  id             String   @id @default(cuid())
+  organisationId String
+  name           String
+  bankName       String
+  accountNumber  String
+  currency       String   @default("NGN")
+  createdAt      DateTime @default(now())
+  updatedAt      DateTime @updatedAt
+
+  organisation Organisation  @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  transactions Transaction[]
+
+  // An account number is unique inside a tenant, never globally.
+  @@unique([organisationId, accountNumber])
+  @@index([organisationId])
+  @@map("accounts")
+}
+
+model Transaction {
+  id             String @id @default(cuid())
+  organisationId String
+  accountId      String
+
+  // Ingestion payload
+  externalReference String
+  amountMinor       BigInt // kobo. Always positive; direction carries the sign.
+  currency          String   @default("NGN")
+  direction         String // INFLOW | OUTFLOW
+  description       String
+  merchant          String?
+  transactionDate   DateTime
+
+  // Classification state
+  originalCategory       String? // first automated classification, never overwritten
+  category               String? // current effective category
+  confidence             Float?
+  classificationSource   String? // RULES | LLM | MANUAL
+  classificationStatus   String    @default("PENDING") // PENDING | CLASSIFIED | PROVISIONAL | FAILED_RETRYING | MANUAL
+  classificationProvider String?
+  classificationVersion  Int       @default(0) // guards against stale async writes
+  classifiedAt           DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organisation         Organisation          @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  account              Account               @relation(fields: [accountId], references: [id], onDelete: Restrict)
+  classificationEvents ClassificationEvent[]
+  reviewFlags          ReviewFlag[]
+
+  // The database is the final authority on duplicate ingestion.
+  @@unique([organisationId, accountId, externalReference])
+  @@index([organisationId, transactionDate, id])
+  @@index([organisationId, classificationStatus])
+  @@index([organisationId, category])
+  @@index([organisationId, direction])
+  @@index([organisationId, merchant])
+  @@index([accountId, transactionDate])
+  @@map("transactions")
+}
+
+/// Append-only audit trail of every classification decision, automated or manual.
+model ClassificationEvent {
+  id               String   @id @default(cuid())
+  organisationId   String
+  transactionId    String
+  previousCategory String?
+  newCategory      String
+  source           String // RULES | LLM | MANUAL
+  confidence       Float?
+  provider         String?
+  providerVersion  String?
+  actorUserId      String? // null for automated decisions
+  reason           String?
+  createdAt        DateTime @default(now())
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  transaction  Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  actor        User?        @relation("ClassificationActor", fields: [actorUserId], references: [id], onDelete: SetNull)
+
+  @@index([transactionId, createdAt])
+  @@index([organisationId, createdAt])
+  @@map("classification_events")
+}
+
+model ReviewFlag {
+  id             String  @id @default(cuid())
+  organisationId String
+  transactionId  String
+  rule           String // DUPLICATE_SUSPECTED | UNUSUALLY_LARGE | LOW_CONFIDENCE | UNUSUAL_FREQUENCY
+  severity       String // LOW | MEDIUM | HIGH
+  explanation    String // human readable reason, always populated
+  details        String? // JSON payload with the numbers behind the decision
+  status         String  @default("OPEN") // OPEN | RESOLVED | DISMISSED
+
+  resolvedByUserId String?
+  resolvedAt       DateTime?
+  resolutionNote   String?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+  transaction  Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
+  resolvedBy   User?        @relation("ReviewFlagResolver", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
+
+  // One flag per rule per transaction: detection stays re-runnable and idempotent.
+  @@unique([transactionId, rule])
+  @@index([organisationId, status, createdAt])
+  @@index([organisationId, rule])
+  @@map("review_flags")
+}
+
+/// Database-backed job queue. Deliberately simple: adequate for assessment
+/// scale, replaceable by BullMQ/SQS without touching the calling code.
+model Job {
+  id             String  @id @default(cuid())
+  organisationId String?
+  type           String // CLASSIFY_TRANSACTION | DETECT_ANOMALIES
+  payload        String // JSON
+  status         String  @default("PENDING") // PENDING | PROCESSING | COMPLETED | FAILED | DEAD
+
+  attempts    Int       @default(0)
+  maxAttempts Int       @default(5)
+  runAt       DateTime  @default(now())
+  lockedAt    DateTime?
+  lockedBy    String?
+  lastError   String?
+  completedAt DateTime?
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  organisation Organisation? @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@index([status, runAt])
+  @@index([organisationId, status])
+  @@map("jobs")
+}
+
+/// Idempotency-Key records for transaction ingestion, scoped per tenant.
+model IdempotencyRecord {
+  id             String @id @default(cuid())
+  organisationId String
+  key            String
+  endpoint       String
+  requestHash    String
+  status         String @default("IN_PROGRESS") // IN_PROGRESS | COMPLETED
+
+  responseStatus Int?
+  responseBody   String? // JSON of the original response, replayed on retry
+
+  createdAt   DateTime  @default(now())
+  completedAt DateTime?
+
+  organisation Organisation @relation(fields: [organisationId], references: [id], onDelete: Cascade)
+
+  @@unique([organisationId, key])
+  @@index([organisationId, createdAt])
+  @@map("idempotency_records")
+}
