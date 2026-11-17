@@ -34,10 +34,10 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   private async applySqlitePragmas(): Promise<void> {
     try {
-      // journal_mode returns a row, so it must go through $queryRawUnsafe.
+      // Several PRAGMAs return a row, so all of them go through queryRaw.
       await this.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
-      await this.$executeRawUnsafe('PRAGMA busy_timeout = 5000;');
-      await this.$executeRawUnsafe('PRAGMA foreign_keys = ON;');
+      await this.$queryRawUnsafe('PRAGMA busy_timeout = 5000;');
+      await this.$queryRawUnsafe('PRAGMA foreign_keys = ON;');
     } catch (error) {
       this.logger.warn(`Could not apply SQLite pragmas: ${(error as Error).message}`);
     }

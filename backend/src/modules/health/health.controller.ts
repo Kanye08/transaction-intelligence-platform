@@ -1,6 +1,7 @@
 import { Controller, Get } from '@nestjs/common';
 import { ApiOkResponse, ApiOperation, ApiTags } from '@nestjs/swagger';
 
+import { Public } from '../../common/auth/public.decorator';
 import { PrismaService } from '../../common/prisma/prisma.service';
 
 @ApiTags('health')
@@ -8,6 +9,7 @@ import { PrismaService } from '../../common/prisma/prisma.service';
 export class HealthController {
   constructor(private readonly prisma: PrismaService) {}
 
+  @Public()
   @Get()
   @ApiOperation({ summary: 'Liveness and database connectivity check' })
   @ApiOkResponse({

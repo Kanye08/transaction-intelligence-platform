@@ -1,9 +1,13 @@
 import { Module } from '@nestjs/common';
+import { ThrottlerModule } from '@nestjs/throttler';
 import { LoggerModule } from 'nestjs-pino';
 
 import { PrismaModule } from './common/prisma/prisma.module';
+import { TenancyModule } from './common/tenancy/tenancy.module';
 import { AppConfigModule } from './config/config.module';
 import { loadConfig } from './config/configuration';
+import { AccountsModule } from './modules/accounts/accounts.module';
+import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
 
 const config = loadConfig();
@@ -27,7 +31,20 @@ const config = loadConfig();
             : undefined,
       },
     }),
+    // Named limiter used only by the login route; see AuthController.
+    ThrottlerModule.forRoot({
+      throttlers: [
+        {
+          name: 'login',
+          limit: config.auth.loginRateLimit,
+          ttl: config.auth.loginRateTtlMs,
+        },
+      ],
+    }),
     PrismaModule,
+    TenancyModule,
+    AuthModule,
+    AccountsModule,
     HealthModule,
   ],
 })

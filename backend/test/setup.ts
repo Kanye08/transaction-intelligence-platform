@@ -8,3 +8,4 @@ process.env.JWT_SECRET = process.env.JWT_SECRET ?? 'test-secret-value-that-is-lo
 process.env.LOG_LEVEL = 'silent';
 process.env.WORKER_ENABLED = 'false';
 process.env.BCRYPT_ROUNDS = '4';
+process.env.LOGIN_RATE_LIMIT = '25';
