@@ -44,6 +44,18 @@ function codeFromStatus(status: number): string {
   return (TITLES[status] ?? 'Error').toUpperCase().replace(/\s+/g, '_');
 }
 
+interface HttpError extends Error {
+  status: number;
+  expose?: boolean;
+}
+
+/** Recognises the http-errors shape used by Express middleware. */
+function isHttpError(error: unknown): error is HttpError {
+  if (!(error instanceof Error)) return false;
+  const status = (error as Partial<HttpError>).status;
+  return typeof status === 'number' && status >= 400 && status < 600;
+}
+
 @Catch()
 export class ProblemDetailsFilter implements ExceptionFilter {
   private readonly logger = new Logger('HttpException');
@@ -102,6 +114,20 @@ export class ProblemDetailsFilter implements ExceptionFilter {
         title: TITLES[status] ?? 'Error',
         status,
         detail: String(payload),
+        code: codeFromStatus(status),
+      };
+    }
+
+    // Errors thrown by Express middleware (body parser, CORS) follow the
+    // http-errors shape rather than Nest's, and would otherwise all surface
+    // as 500s - a malformed or oversized body is a client error.
+    if (isHttpError(exception)) {
+      const status = exception.status;
+      return {
+        type: 'about:blank',
+        title: TITLES[status] ?? 'Error',
+        status,
+        detail: exception.expose ? exception.message : 'The request could not be processed.',
         code: codeFromStatus(status),
       };
     }

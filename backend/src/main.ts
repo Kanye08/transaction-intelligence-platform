@@ -38,6 +38,11 @@ export function configureApp(app: NestExpressApplication, config: AppConfig): vo
   app.set('trust proxy', 1);
   app.enableCors({ origin: true, credentials: true });
 
+  // A 500-row batch import is a few hundred kilobytes; the Express default of
+  // 100kb would reject it. The limit is still bounded, so an oversized body is
+  // refused with 413 rather than being streamed into memory.
+  app.useBodyParser('json', { limit: '5mb' });
+
   app.setGlobalPrefix('api');
   app.useGlobalPipes(
     new ValidationPipe({

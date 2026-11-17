@@ -9,6 +9,8 @@ import { loadConfig } from './config/configuration';
 import { AccountsModule } from './modules/accounts/accounts.module';
 import { AuthModule } from './modules/auth/auth.module';
 import { HealthModule } from './modules/health/health.module';
+import { JobsModule } from './modules/jobs/jobs.module';
+import { TransactionsModule } from './modules/transactions/transactions.module';
 
 const config = loadConfig();
 
@@ -45,6 +47,8 @@ const config = loadConfig();
     TenancyModule,
     AuthModule,
     AccountsModule,
+    JobsModule,
+    TransactionsModule,
     HealthModule,
   ],
 })
