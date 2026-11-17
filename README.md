@@ -189,7 +189,7 @@ Three interchangeable providers behind one interface
 
 | Provider | What it is |
 |---|---|
-| `rules` | ~90 deterministic Nigerian keyword rules — MTN, IKEDC, DSTV, FIRS/PAYE, GTBank charges, Paystack/Flutterwave settlements, AWS, Air Peace, salary, rent, stamp duty. Free, instant, reproducible. |
+| `rules` | 17 deterministic rule groups over ~85 Nigerian keywords — MTN, IKEDC, DSTV, FIRS/PAYE, GTBank charges, Paystack/Flutterwave settlements, AWS, Air Peace, salary, rent, stamp duty. Free, instant, reproducible. |
 | `mock-llm` | A stand-in model. Deterministic semantic inference, and configurable misbehaviour: latency, timeout, failure, 429, invalid output, low confidence. |
 | `hybrid` *(default)* | Rules first; the model only when rules are unsure. |
 
@@ -198,8 +198,8 @@ worker, the audit trail and the API know only the interface.
 
 **The hybrid path:** run the rules → if confidence ≥ `CLASSIFICATION_CONFIDENCE_THRESHOLD` (0.75)
 stop, no model call → otherwise call the model behind a timeout and a circuit breaker → validate
-the response strictly → take it only if it beats the rule result. In the seeded data **roughly 8
-in 10 transactions never reach the model**.
+the response strictly → take it only if it beats the rule result. In the seeded ledger **two-thirds of transactions
+are settled by the rules alone**; the remaining third escalate.
 
 **Every provider response is validated** against the category list and a 0–1 confidence before it
 can touch the database. A hallucinated `CRYPTO_SPECULATION` or `"confidence": "very high"` becomes
@@ -290,7 +290,7 @@ Lagos Foods: 76 low-confidence, 15 unusually large, 10 duplicates, 3 frequency).
 
 ## Database
 
-8 tables, 20 indexes, real constraints. SQLite has no Prisma enums, so the initial migration
+8 tables, 21 indexes, real constraints. SQLite has no Prisma enums, so the initial migration
 hand-writes **CHECK constraints** for `amountMinor > 0`, direction, classification status and
 source, confidence ∈ [0,1], flag severity and lifecycle, and job status. The database — not just
 the application — refuses an invalid state. (Verified: inserting `direction = 'SIDEWAYS'` fails.)
@@ -351,14 +351,15 @@ breaker, automatic recovery, restart recovery — all under test.
 ### 2. Minimising classification cost at millions of transactions a day
 
 The cheapest LLM call is the one you do not make. The hybrid provider runs deterministic rules
-first and only escalates when confidence falls below the threshold; on the seeded ledger that is
-**about 20% of transactions**, an 80% cost reduction before any other optimisation.
+first and only escalates when confidence falls below the threshold; on the seeded ledger the model
+is consulted for **about a third of transactions**, a ~65% reduction in calls before any other
+optimisation.
 
 Beyond what is built, in order of return:
 
 1. **Merchant caching.** Transaction descriptions repeat relentlessly — the same 200 merchants
    cover most volume. Cache `(normalised merchant, direction) → category` and the hit rate makes
-   most of the remaining 20% free. Invalidate when a human corrects that merchant.
+   much of that remaining third free. Invalidate when a human corrects that merchant.
 2. **Promote corrections into rules.** Every manual correction is a labelled example; a recurring
    one becomes a deterministic rule, and that merchant never costs a call again. The audit trail is
    already the dataset.
