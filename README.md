@@ -1,13 +1,11 @@
 # Transaction Intelligence Platform
 
-A multi-tenant platform for Nigerian businesses to import financial transactions, categorise them
-automatically, surface the ones that need a human, and correct the machine when it is wrong —
-without ever losing the record of what it originally decided.
+A multi-tenant platform where Nigerian businesses import transactions, have them categorised
+automatically, review the ones that look wrong, and correct the categories by hand without losing
+the record of what the system originally decided.
 
-Built for the Sycamore Capital technical assessment. Node.js + TypeScript throughout, SQLite so it
-runs from a clone with nothing else installed.
-
----
+Built for the Sycamore Capital technical assessment. Node.js, TypeScript, NestJS, Prisma and
+SQLite, with a React frontend. Nothing else needs installing.
 
 ## Quick start
 
@@ -15,17 +13,21 @@ runs from a clone with nothing else installed.
 git clone https://github.com/Kanye08/transaction-intelligence-platform.git
 cd transaction-intelligence-platform
 npm install
-npm run setup     # migrate, build, seed ~1,850 transactions, classify them
-npm start         # http://localhost:3000
+npm run setup
+npm start          # http://localhost:3000
 npm test
 ```
 
-`npm run setup` takes roughly two minutes, most of it classifying the seeded ledger through the
-real pipeline so the app is populated the moment it starts. Node 20.11+ (`.nvmrc` pins 24).
+`npm run setup` applies migrations, builds both workspaces, seeds 1,847 transactions and then runs
+them through the classifier. It takes about two and a half minutes, nearly all of it classification,
+and leaves the app populated so there is something to look at straight away.
 
-### Demo logins
+Node 20.11 or newer (`.nvmrc` pins 24). `npm install` writes a `.env` from `.env.example` with a
+generated JWT secret.
 
-Password for all four: `Password123!`
+### Logins
+
+Password for all four accounts: `Password123!`
 
 | Organisation | Email | Role |
 |---|---|---|
@@ -34,431 +36,329 @@ Password for all four: `Password123!`
 | Abuja Logistics Ltd | `bola@abujalogistics.ng` | Owner |
 | Abuja Logistics Ltd | `chidi@abujalogistics.ng` | Member |
 
-Sign in as each to see that the two tenants share nothing.
+The two organisations have separate accounts, transactions and review queues.
 
 ### Commands
 
 | Command | What it does |
 |---|---|
 | `npm run setup` | Migrate, build, seed, classify. Safe to re-run. |
-| `npm start` | Production mode: API and compiled frontend on port 3000. |
-| `npm run dev` | API on 3000 with watch, Vite on 5173 with a proxy. |
-| `npm test` | Full suite: 198 tests. |
-| `npm run test:unit` / `npm run test:e2e` | Unit only / integration only. |
-| `npm run typecheck` | `tsc --noEmit` on both workspaces. |
-| `npm run db:reset` | Drop, re-migrate, re-seed, re-classify. |
-| `npm run db:classify` | Drain the job queue by hand. |
+| `npm start` | Serves the API and the built frontend on port 3000. |
+| `npm run dev` | API on 3000 in watch mode, Vite on 5173 proxying `/api`. |
+| `npm test` | 198 tests. |
+| `npm run test:unit` / `npm run test:e2e` | Unit tests only / integration tests only. |
+| `npm run typecheck` | `tsc --noEmit` on backend and frontend. |
+| `npm run db:reset` | Drop the database, migrate, seed and classify again. |
+| `npm run db:classify` | Drain the job queue manually (runs the built worker, so build first). |
 | `npm run db:studio` | Prisma Studio. |
 
-API docs: **`/api/docs`** (Swagger UI) · **`/openapi.json`** (spec) · **`/api/health`**
+Swagger UI is at `/api/docs`, the spec at `/openapi.json`, and a health check at `/api/health`.
 
----
+## How it works
 
-## Architecture
+A request arrives with a bearer token. A global guard verifies it and puts the user and their
+organisation id on the request. Services then read and write through a tenant-scoped Prisma client,
+so a query can only ever see that organisation's rows.
 
-```mermaid
-flowchart TB
-    subgraph Client
-        UI[React + Vite<br/>dashboard · transactions · review]
-    end
-
-    subgraph API["NestJS API (single origin)"]
-        GUARD[JWT guard<br/>tenant from token]
-        TX[Transactions<br/>ingest · query]
-        IDEM[Idempotency]
-        CLS[Classification]
-        REV[Review]
-        DASH[Dashboard]
-    end
-
-    subgraph Async["Background worker (in-process)"]
-        W[Poll · claim · retry]
-    end
-
-    subgraph Providers["Classification providers"]
-        R[Rules]
-        M[Mock LLM]
-        H[Hybrid]
-    end
-
-    DB[(SQLite via Prisma<br/>tenant-scoped client)]
-
-    UI -->|Bearer JWT| GUARD
-    GUARD --> TX & CLS & REV & DASH
-    TX --> IDEM
-    TX -->|persist + enqueue<br/>one transaction| DB
-    DB -->|claim job| W
-    W --> CLS
-    CLS --> H
-    H --> R
-    H -.->|only when rules are unsure| M
-    CLS -->|category + audit event| DB
-    W --> REV
-    REV -->|flags with explanations| DB
-    DASH -->|SQL aggregates| DB
-```
-
-**The shape of the thing.** Ingestion writes a row and schedules a job, in one database
-transaction, and returns. Classification happens later, in a worker. That single decision is what
-makes the AI provider's health irrelevant to whether a customer's transactions are accepted.
-
-### Layout
+Importing a transaction writes the row and a classification job in the same database transaction,
+then returns. It never calls the classifier. A background worker picks the job up, asks the
+configured provider for a category, writes the decision and an audit event, and runs the four
+detection rules over the transaction. If the provider is slow or down, the transaction is already
+stored and readable; only its category is late.
 
 ```
 backend/src/
   common/
-    auth/          JWT guard (global), @Public, @CurrentUser
-    domain/        categories, statuses, rules — the shared vocabulary
-    filters/       RFC 7807 problem details
-    money/         integer-kobo money utility  ← financial correctness lives here
-    prisma/        PrismaClient wrapper + SQLite pragmas
+    auth/          JWT guard, @Public, @CurrentUser
+    domain/        categories, statuses and rule names
+    filters/       RFC 7807 error responses
+    middleware/    request correlation id
+    money/         integer-kobo money utility
+    prisma/        PrismaClient wrapper and SQLite pragmas
     resilience/    circuit breaker, timeout, jittered backoff
-    tenancy/       tenant-scoped Prisma client  ← isolation lives here
+    tenancy/       tenant-scoped Prisma client
   modules/
     accounts/ auth/ dashboard/ health/ idempotency/ jobs/ review/ transactions/
     classification/
-      providers/   rules · mock-llm · hybrid, behind one interface
-      classification-state.ts        the lifecycle, written down once
-      classification.service.ts      applies a decision, guarded by row version
-      classification-correction.service.ts   manual corrections + audit history
+      providers/                  rules, mock-llm, hybrid
+      classification-state.ts     allowed status transitions
+      classification.service.ts   applies a decision, guarded by row version
+      classification-correction.service.ts   manual corrections and history
   scripts/process-jobs.ts
-backend/prisma/        schema, migration (with CHECK constraints), seed
-backend/test/          integration suites
-frontend/src/          api client, auth context, 4 screens, components
+backend/prisma/   schema, migration, seed
+backend/test/     integration tests
+frontend/src/     api client, auth context, four screens
 ```
 
----
+## Money
 
-## Financial correctness
+₦12,999.75 is stored as the BigInt `1299975`: integer kobo, in a `BIGINT` column. No monetary value
+is ever a JavaScript `number`.
 
-**₦12,999.75 is stored as the BigInt `1299975`** — integer kobo, in a `BIGINT` column. No monetary
-value is ever a JavaScript `number`, because `0.1 + 0.2 !== 0.3` and a ledger cannot absorb that.
+Amounts arrive as decimal strings and are parsed digit by digit in
+[`money.ts`](backend/src/common/money/money.ts), never through `parseFloat`. A JSON number is
+rejected outright, because the precision is already lost by the time it gets here. Fractional kobo,
+thousands separators, currency symbols and exponent notation are rejected too. Sums and averages
+stay in BigInt, and `allocate()` spreads remainders a kobo at a time so split amounts add back up.
 
-- Input arrives as a **decimal string** and is parsed digit-by-digit in
-  [`money.ts`](backend/src/common/money/money.ts). `parseFloat` is never used. A numeric JSON
-  amount is **rejected** rather than accepted — by the time it is a `number`, the precision is
-  already gone.
-- Fractional kobo (`12999.754`), thousands separators, currency symbols and exponent notation are
-  all refused at the edge, because silently rounding somebody's money is worse than a 400.
-- Sums and averages stay in `BigInt`. `allocate()` distributes remainders a kobo at a time so
-  split amounts always add back to the original.
-- Every API response carries the amount three ways and **never as a number**:
+Responses carry the amount three ways, all strings:
 
 ```json
 { "amount": "12999.75", "amountMinor": "1299975", "currency": "NGN", "formattedAmount": "₦12,999.75" }
 ```
 
-- `amountMinor` is a **string**: JSON has no integer type wide enough, and `JSON.stringify` cannot
-  serialise `BigInt` at all.
-- The only floating point in the system is in the *anomaly statistics* — a standard deviation used
-  to decide whether to flag. It decides, it never produces a monetary value.
+`amountMinor` is a string because JSON has no integer type wide enough and `JSON.stringify` cannot
+serialise BigInt at all.
 
-39 unit tests cover this, including values beyond `Number.MAX_SAFE_INTEGER` and the classic
-`0.1 + 0.2` drift.
+The one place floating point appears is the standard deviation used by the unusually-large rule. It
+decides whether to flag something; it never produces an amount. 39 unit tests cover the money
+utility, including values past `Number.MAX_SAFE_INTEGER`.
 
----
+## Multi-tenancy and security
 
-## Multi-tenancy
+The organisation id comes from the verified JWT. An `organisationId` in a query string, body or
+header is ignored.
 
-The tenant comes from the **verified JWT**, never from a path, query string or body. Requests that
-pass `?organisationId=...` are ignored, and there is a test that proves it.
+[`tenant-prisma.service.ts`](backend/src/common/tenancy/tenant-prisma.service.ts) returns a Prisma
+client extended so that every operation on a tenant-owned model gets the organisation filter put
+into its `where`, and the tenant id overwritten in its `data`. A service cannot forget the filter,
+because the only way to reach tenant data is through that client, and passing the wrong id does not
+help because the scope overwrites it. Operations the extension does not recognise throw instead of
+running unscoped.
 
-Isolation is enforced in one place: [`tenant-prisma.service.ts`](backend/src/common/tenancy/tenant-prisma.service.ts)
-returns a Prisma client extended so that every operation on every tenant-owned model has the
-organisation filter **injected into the `where`, and the tenant id overwritten in the `data`**.
-A service cannot forget the filter, because the only way to reach tenant data is through a client
-that already carries it; and if a service passes the *wrong* tenant id, the scope overwrites it.
-Prisma's own types still require `organisationId` on writes, so the compiler stops you omitting a
-tenant and the runtime stops you naming the wrong one.
+Cross-tenant requests return 404 rather than 403, since 403 confirms the record exists.
 
-Unknown operations throw rather than running unscoped — a new Prisma method cannot silently
-bypass the boundary.
-
-Cross-tenant requests return **404, not 403**: a 403 confirms the record exists.
-
-Also implemented: bcrypt hashing, login rate limiting, Helmet headers (with a CSP carve-out only
-for the Swagger page), whitelist validation that rejects unknown fields, problem-details errors
-that never leak stack traces, and request correlation ids on every response and log line.
-
----
+Also in place: bcrypt password hashing, rate limiting on login, Helmet headers (relaxed only for
+the Swagger page, which needs an inline script), validation that rejects unknown fields, error
+responses that never include stack traces, and a correlation id on every response and log line.
 
 ## Classification
 
-Three interchangeable providers behind one interface
-([`classification-provider.ts`](backend/src/modules/classification/providers/classification-provider.ts)):
+Three providers implement one interface
+([`classification-provider.ts`](backend/src/modules/classification/providers/classification-provider.ts)),
+selected with `CLASSIFICATION_PROVIDER`:
 
 | Provider | What it is |
 |---|---|
-| `rules` | 17 deterministic rule groups over ~85 Nigerian keywords — MTN, IKEDC, DSTV, FIRS/PAYE, GTBank charges, Paystack/Flutterwave settlements, AWS, Air Peace, salary, rent, stamp duty. Free, instant, reproducible. |
-| `mock-llm` | A stand-in model. Deterministic semantic inference, and configurable misbehaviour: latency, timeout, failure, 429, invalid output, low confidence. |
-| `hybrid` *(default)* | Rules first; the model only when rules are unsure. |
+| `rules` | 17 rule groups over about 85 Nigerian keywords: MTN, IKEDC, DSTV, FIRS and PAYE, bank charges, Paystack and Flutterwave settlements, AWS, Air Peace, salary, rent, stamp duty. |
+| `mock-llm` | A stand-in model with deterministic inference, which can also be told to be slow, time out, fail, rate-limit, return invalid output, or answer with low confidence. |
+| `hybrid` *(default)* | Rules first, model only when the rules are unsure. |
 
-Switch with `CLASSIFICATION_PROVIDER=rules|mock-llm|hybrid`. Nothing else changes — ingestion, the
-worker, the audit trail and the API know only the interface.
+Hybrid runs the rules, and if their confidence is at or above `CLASSIFICATION_CONFIDENCE_THRESHOLD`
+(0.75) it stops there. Otherwise it calls the model behind a timeout and a circuit breaker,
+validates the response, and uses it only if its confidence beats the rule result. On the seeded
+data, 1,243 of 1,847 transactions (67%) are classified by rules alone and 604 (33%) by the model.
 
-**The hybrid path:** run the rules → if confidence ≥ `CLASSIFICATION_CONFIDENCE_THRESHOLD` (0.75)
-stop, no model call → otherwise call the model behind a timeout and a circuit breaker → validate
-the response strictly → take it only if it beats the rule result. In the seeded ledger **two-thirds of transactions
-are settled by the rules alone**; the remaining third escalate.
+Every provider response is checked against the category list and a 0 to 1 confidence before it can
+reach the database, so an invented category or a confidence of `"very high"` is treated as a
+provider failure rather than written down.
 
-**Every provider response is validated** against the category list and a 0–1 confidence before it
-can touch the database. A hallucinated `CRYPTO_SPECULATION` or `"confidence": "very high"` becomes
-a handled provider failure, not corrupt data.
-
-**Statuses:** `PENDING` → `CLASSIFIED` (confident) / `PROVISIONAL` (below threshold, stays
-reviewable) / `FAILED_RETRYING` (provider degraded, another attempt scheduled) / `MANUAL` (a human
-decided — automation may never touch it again). Transitions are enforced in
+Statuses are `PENDING`, `CLASSIFIED`, `PROVISIONAL` (below the threshold, still reviewable),
+`FAILED_RETRYING` and `MANUAL`. Once a human sets a category, automation leaves it alone. The
+allowed transitions live in
 [`classification-state.ts`](backend/src/modules/classification/classification-state.ts).
 
-Low-confidence results are **not** dumped into `Other` to look finished; they keep the best
-available answer, are marked provisional, and are flagged for review.
+Low-confidence results keep the best answer available and are marked provisional rather than being
+relabelled `Other`.
 
-### When the provider misbehaves
+### Failure handling
 
-Timeouts, bounded retries, exponential backoff **with full jitter** (without it, every job that
-failed during an outage retries at the same instant and recreates the outage), a circuit breaker
-that stops hammering a dead provider, and dead-lettering after the attempt limit. A provider
-failure never damages a stored transaction: it stays retrievable, with whatever is known so far.
+Calls to the model have a timeout. Failed jobs are retried with exponential backoff and full
+jitter, so a backlog does not retry in lockstep and recreate the outage. After five consecutive
+failures the circuit breaker opens and calls fail immediately until it half-opens and a probe
+succeeds. The budget is 10 attempts on a two-minute base capped at 30 minutes, which covers roughly
+six hours of downtime; past that a transaction settles as `PROVISIONAL` and waits in the review
+queue. All of those numbers are environment variables.
 
-Tests drive each failure mode through the real pipeline — `failure`, `timeout`, `rate_limited`,
-`invalid` — and prove the system recovers automatically when the provider returns.
+Tests drive each failure mode (`failure`, `timeout`, `rate_limited`, `invalid`) through the real
+pipeline and check that the system recovers on its own once the provider returns.
 
 ### Background jobs
 
-A `jobs` table and a poll loop. Claiming is atomic (`UPDATE ... WHERE id = ? AND status =
-'PENDING'`, not `SELECT` then `UPDATE`), so two workers cannot take the same job. Jobs left
-`PROCESSING` by a crash are re-queued on boot.
+A `jobs` table and a poll loop. A job is claimed with `UPDATE ... WHERE id = ? AND status =
+'PENDING'` rather than a select followed by an update, so two workers cannot take the same job.
+Anything left `PROCESSING` by a crash goes back in the queue at boot.
 
-**This is an assessment-scale queue, and I would not run it at volume.** It avoids making Redis a
-prerequisite for `git clone`. [`jobs.service.ts`](backend/src/modules/jobs/jobs.service.ts) is the
-seam: swapping in BullMQ, SQS or RabbitMQ replaces the worker and the enqueue call, and nothing
-above them changes.
+This is sized for the assessment, not for production. It keeps Redis out of the setup.
+[`jobs.service.ts`](backend/src/modules/jobs/jobs.service.ts) is the seam: BullMQ, SQS or RabbitMQ
+would replace the worker and the enqueue call, and nothing above them would change.
 
----
+## Audit history and corrections
 
-## Auditability
+`classification_events` is append-only. Each row records the previous and new category, the source
+(`RULES`, `LLM` or `MANUAL`), confidence, provider and version, who made the change, a reason and a
+timestamp. Identical consecutive decisions are not re-recorded, so a retry that produces the same
+answer does not fill the history with noise.
 
-`classification_events` is append-only. Every decision — automated or human — records the previous
-and new category, the source (`RULES`/`LLM`/`MANUAL`), confidence, provider and version, the actor,
-a reason, and a timestamp.
-
-A manual correction preserves `originalCategory` (the machine's first answer, kept forever),
-records who changed it and why, and sets the status to `MANUAL`. **A classification job queued
-before the correction cannot undo it** — the worker checks the status and the row version, and a
-stale job is skipped. There is a test for exactly that race.
-
-Correcting a category also closes the low-confidence flag that asked for the decision.
-
----
+A manual correction keeps `originalCategory`, stores who changed it and why, and sets the status to
+`MANUAL`. A classification job queued before the correction cannot undo it: the worker checks the
+status and the row version, and skips the stale job. Correcting a category also closes the
+low-confidence flag that asked for a decision.
 
 ## Review
 
-Four independent detectors, each separately testable, each producing a plain-English explanation:
+Four detection rules, each independently testable, each producing an explanation a reviewer can
+read:
 
 | Rule | What it looks for |
 |---|---|
-| `DUPLICATE_SUSPECTED` | Same account, amount and direction within 24h under a *different* reference, with a similar description (Jaccard ≥ 0.6). Not the exact duplicate the unique index already rejects — this is the double-paid invoice. |
-| `UNUSUALLY_LARGE` | More than 3σ above the mean of the last 120 comparable transactions **on the same account and direction**, and only once there are ≥ 20 of them. With five transactions of history, "unusual" is meaningless. |
-| `LOW_CONFIDENCE` | Confidence below 0.6. Status alone doesn't flag: a 0.68 answer is reasonable, and a queue full of noise gets ignored. |
-| `UNUSUAL_FREQUENCY` | More than 5 payments to the same counterparty in 24h — a retry loop or duplicated billing. |
+| `DUPLICATE_SUSPECTED` | Same account, amount and direction within 24 hours under a different reference, with a similar description (shared-word score of 0.6 or more). Exact duplicates are already rejected at ingestion; this catches the invoice paid twice. |
+| `UNUSUALLY_LARGE` | More than 3 standard deviations above the mean of the last 120 transactions on the same account and direction, and only once there are at least 20 of them. Below that there is no verdict, because "unusual" means nothing on five transactions. |
+| `LOW_CONFIDENCE` | Confidence below 0.6. A 0.68 answer is reasonable and is not flagged, to keep the queue worth reading. |
+| `UNUSUAL_FREQUENCY` | More than 5 payments to the same counterparty in 24 hours, which usually means a retry loop or repeated billing. |
 
-All thresholds are environment variables. Flags are `UNIQUE(transactionId, rule)`, so detection is
-idempotent and re-runnable. Lifecycle is `OPEN → RESOLVED | DISMISSED`, recording who closed it,
-when, and their note.
+Thresholds are environment variables. Flags are unique per transaction and rule, so detection can
+be re-run safely. A flag is `OPEN` until someone resolves or dismisses it, which records their name,
+the time and their note.
 
-The seeded data triggers all four, so the review queue is useful immediately (~104 open flags for
-Lagos Foods: 76 low-confidence, 15 unusually large, 10 duplicates, 3 frequency).
-
----
+The seed triggers all four: 104 open flags for Lagos Foods (76 low confidence, 15 unusually large,
+10 duplicates, 3 frequency) and 52 for Abuja Logistics.
 
 ## Transactions
 
-- Single and batch import (≤ 500 rows), filtering, search, cursor pagination.
-- **Duplicate prevention is a database guarantee**: `UNIQUE(organisationId, accountId,
-  externalReference)`. Not a check-then-insert, which loses to concurrency. Five simultaneous
-  imports of the same transaction produce exactly one row and four `DUPLICATE` responses — tested.
-- **Idempotency-Key** on ingestion, resting on `UNIQUE(organisationId, key)`. Replays the original
-  response; a reused key with a different payload is `409`; a failed request releases the key.
-- **Batch ingestion has partial success.** Rows are validated individually — deliberately *not* by
-  the global pipe, which would reject the whole batch for one bad row — and each returns `CREATED`,
-  `DUPLICATE` or `FAILED` with its own error. HTTP `207`.
-- **Cursor pagination**, keyed on `(transactionDate, id)`: page 10,000 costs what page 1 costs,
-  where `OFFSET` would make the database walk every skipped row. Totals are opt-in
-  (`includeTotal=true`) because counting a whole tenant is the expensive half of the query.
-
----
+- Single and batch import (up to 500 rows), filtering, search and cursor pagination.
+- Duplicates are prevented by `UNIQUE(organisationId, accountId, externalReference)` rather than a
+  check before inserting, which loses under concurrency. Five simultaneous imports of the same
+  transaction produce one row and four `DUPLICATE` responses.
+- `Idempotency-Key` is backed by `UNIQUE(organisationId, key)`. The same key replays the original
+  response, the same key with a different payload returns 409, and a request that failed releases
+  its key for a retry.
+- Batch import returns 207 with a result per row (`CREATED`, `DUPLICATE` or `FAILED` with its
+  error). Rows are validated individually rather than by the global pipe, which would reject the
+  whole batch over one bad row.
+- Pagination is keyed on `(transactionDate, id)`, so a deep page costs the same as the first one.
+  Totals are opt-in with `includeTotal=true`, since counting a whole organisation is the expensive
+  part of the query.
 
 ## Database
 
-8 tables, 21 indexes, real constraints. SQLite has no Prisma enums, so the initial migration
-hand-writes **CHECK constraints** for `amountMinor > 0`, direction, classification status and
-source, confidence ∈ [0,1], flag severity and lifecycle, and job status. The database — not just
-the application — refuses an invalid state. (Verified: inserting `direction = 'SIDEWAYS'` fails.)
+Eight tables and 21 indexes. SQLite has no Prisma enums, so the initial migration hand-writes CHECK
+constraints for `amountMinor > 0`, direction, classification status and source, confidence between
+0 and 1, flag severity and status, and job status. Invalid states are refused by the database, not
+only by the application.
 
-**SQLite's limits, honestly:** one writer at a time, no `ILIKE`/trigram search, no partial indexes,
-no native enums, and `synchronous = NORMAL` is set to keep seeding tolerable. Moving to PostgreSQL
-means: change the datasource, convert the string-plus-CHECK columns to native enums, make search
-`mode: 'insensitive'` or a trigram index, and swap the job table for a real queue. No application
-code changes, because all database access already goes through the scoped client.
-
----
+SQLite's limits are real: one writer at a time, no case-insensitive or trigram search, no partial
+indexes, no enums, and `synchronous = NORMAL` is set to keep seeding quick. Moving to PostgreSQL
+means changing the datasource, turning the string-plus-CHECK columns into enums, switching search to
+`mode: 'insensitive'` or a trigram index, and replacing the job table with a real queue. Application
+code stays as it is, because all database access already goes through the scoped client.
 
 ## Testing
 
-**198 tests, all passing** (`npm test`), across 13 suites.
+198 tests across 13 suites, all passing.
 
-| Area | Coverage |
+| Area | What is covered |
 |---|---|
-| Money | 39 tests: parsing, formatting, fractional kobo, huge values, floating-point drift, allocation |
-| Tenant isolation | Cross-tenant read/update/delete/aggregate, spoofed org ids, forged tokens, 404-not-403 |
-| Ingestion | Duplicates, concurrent imports, idempotency (replay / conflict / release / concurrency), partial batches |
-| Classification | Full pipeline, every provider failure mode, circuit breaker, recovery, restart, dead-lettering |
-| Audit | Original preserved, actor recorded, stale job cannot overwrite a manual correction |
-| Review | Each of the four rules, insufficient-history guard, idempotent detection, flag lifecycle |
-| Dashboard | Exact totals to the kobo, date and account filters, empty periods, tenant isolation |
+| Money | Parsing, formatting, fractional kobo, huge values, floating-point drift, allocation |
+| Tenant isolation | Cross-tenant reads, updates, deletes and aggregates, spoofed organisation ids, forged tokens |
+| Ingestion | Duplicates, concurrent imports, idempotency, partial batches |
+| Classification | Whole pipeline, every provider failure mode, circuit breaker, recovery, restart, dead-lettering |
+| Audit | Original preserved, actor recorded, stale job cannot overwrite a correction |
+| Review | All four rules, the insufficient-history guard, repeat detection, flag lifecycle |
+| Dashboard | Totals to the kobo, date and account filters, empty periods, isolation |
 
-Integration tests run the real application — same modules, pipes, guards and filter — against a
-real migrated SQLite database. Nothing is mocked except the AI provider, which is a mock by design.
-
----
+Integration tests run the real application, with the same modules, pipes, guards and error filter,
+against a migrated SQLite database. The only mock is the AI provider, which is a mock by design.
 
 ## Design scenarios
 
-### 1. The classification provider is unavailable for six hours
+### 1. The provider is unavailable for six hours
 
-Nothing stops. Ingestion never calls the provider: it writes the transaction and a job in one
-transaction and returns `201`. Customers keep importing, and every transaction stays queryable with
-`PENDING` or `FAILED_RETRYING` against it, so the ledger is complete even though the categories are
-not.
+Ingestion does not depend on it, so imports keep returning 201 and every transaction stays
+queryable with `PENDING` or `FAILED_RETRYING` on it. The backlog sits in the jobs table and
+survives restarts.
 
-The queue absorbs the backlog durably — it is a database table, so a restart loses nothing. Retries
-are bounded with exponential backoff and full jitter, so a few hundred thousand jobs do not
-stampede the provider the moment it recovers. The default budget — 10 attempts, 2-minute base,
-30-minute cap — is sized so a six-hour outage is survived without a transaction falling out of the
-retry cycle; a longer one leaves transactions `PROVISIONAL` in the review queue rather than wrong. After five consecutive failures the circuit breaker
-opens and calls fail fast instead of burning a timeout each: during the outage the provider is
-called a handful of times, not hundreds of thousands. Hybrid degrades rather than failing —
-deterministic rules still classify most transactions, and the rest keep the best available answer
-marked provisional.
+Retries use the backoff, jitter and circuit breaker described above, so the provider is called a
+handful of times during the outage rather than once per queued job, and recovery is automatic: the
+breaker half-opens, a probe succeeds, and the queue drains in `runAt` order. Classification is
+driven off the stored row and guarded by a version check, so a retry cannot apply twice. Hybrid also
+degrades usefully here, since the rules still classify most transactions without the model.
 
-Recovery is automatic: the breaker half-opens, one probe succeeds, and the backlog drains in
-`runAt` order. Jobs are idempotent (classification is a pure function of the row plus a version
-check), so a retry cannot double-apply. At real volume I would add: a queue-depth and
-oldest-pending-job alert, a dashboard banner telling customers categorisation is delayed, and a
-drain rate-limit so the recovery does not take the provider down again.
+With the default budget a six-hour outage is survived. A longer one leaves transactions provisional
+in the review queue rather than wrong, and `npm run db:classify` or the reclassify endpoint picks
+them up afterwards. At real volume I would add alerts on queue depth and oldest pending job, a
+notice in the UI that categorisation is behind, and a drain rate limit so recovery does not knock
+the provider over again.
 
-*Implemented here:* decoupled ingestion, durable jobs, bounded retries with jitter, circuit
-breaker, automatic recovery, restart recovery — all under test.
+### 2. Keeping classification costs down at millions a day
 
-### 2. Minimising classification cost at millions of transactions a day
+Most of the saving is already here: rules run first and the model is only asked when they are
+unsure, which on the seeded data is a third of transactions. The confidence threshold is the dial.
 
-The cheapest LLM call is the one you do not make. The hybrid provider runs deterministic rules
-first and only escalates when confidence falls below the threshold; on the seeded ledger the model
-is consulted for **about a third of transactions**, a ~65% reduction in calls before any other
-optimisation.
+After that, in the order I would do them:
 
-Beyond what is built, in order of return:
+1. **Cache by merchant.** Descriptions repeat, so `(normalised merchant, direction) → category`
+   removes most of the remaining calls. Invalidate when someone corrects that merchant.
+2. **Turn corrections into rules.** Every manual correction is a labelled example, and a recurring
+   one becomes a rule that costs nothing. The audit history is already the dataset.
+3. **Batch requests.** Fifty transactions per call instead of one, since prompt overhead dominates
+   on short inputs.
+4. **Tier the models.** A cheap model by default, an expensive one only for ambiguous or
+   high-value transactions.
+5. **Trim the prompt.** Description, merchant, direction and an amount band, not the whole record.
+6. **Track cost per thousand transactions** with a cap that falls back to rules-only.
 
-1. **Merchant caching.** Transaction descriptions repeat relentlessly — the same 200 merchants
-   cover most volume. Cache `(normalised merchant, direction) → category` and the hit rate makes
-   much of that remaining third free. Invalidate when a human corrects that merchant.
-2. **Promote corrections into rules.** Every manual correction is a labelled example; a recurring
-   one becomes a deterministic rule, and that merchant never costs a call again. The audit trail is
-   already the dataset.
-3. **Batching.** Classify 50 transactions per request rather than one — amortises the prompt
-   overhead, which is most of the token cost on short inputs.
-4. **Model tiering.** A small cheap model for ordinary transactions, the expensive one only for
-   genuinely ambiguous or high-value ones. Confidence decides.
-5. **Prompt economy.** Send the description, merchant, direction and amount band — not the whole
-   record.
-6. **Budgets and monitoring.** Cost per 1,000 transactions as a tracked metric, with a cap that
-   degrades to rules-only rather than overspending.
-
-Accuracy does not suffer, because the transactions that skip the model are the ones a rule already
-identifies with high confidence — and the confidence threshold is the dial for that trade-off.
+Accuracy holds up because the transactions that skip the model are the ones a rule already matches
+confidently.
 
 ### 3. Scaling from 100,000 to 10 million transactions a day
 
-**What is already right:** tenant-scoped queries with composite indexes, cursor pagination, SQL
-aggregates rather than in-memory sums, opt-in counting, decoupled async processing, and stateless
-JWT auth that scales horizontally.
+Already in place: tenant-scoped queries with composite indexes, cursor pagination, aggregates
+computed in SQL, opt-in counting, asynchronous processing and stateless auth.
 
-**What has to change:**
+What would have to change:
 
-- **PostgreSQL.** SQLite allows one writer; 10M/day is ~115 writes/second sustained with far higher
-  peaks. Same Prisma schema, native enums, real concurrency.
-- **Partitioning.** Range-partition `transactions` by month. Most queries are recent-window, and
-  partition pruning keeps them fast while old data is detached and archived cheaply.
-- **A real queue.** BullMQ or SQS, with many worker processes. A polling table becomes contention;
-  `jobs.service.ts` is the seam.
-- **Horizontal workers.** Classification is embarrassingly parallel. Scale on queue depth.
-- **Read replicas** for the dashboard and listings, with the primary kept for writes. Aggregates
-  tolerate replica lag.
-- **Pre-aggregation.** Dashboard sums over 10M rows/day should be materialised per
-  tenant/day/category and read in milliseconds, not computed per request.
-- **Connection pooling** (PgBouncer) — serverless Prisma clients exhaust connections quickly.
-- **Backpressure.** Rate limits per tenant, bounded queue depth, `429` with `Retry-After` rather
-  than tipping over.
-- **Observability.** The correlation id is already threaded through; it needs OpenTelemetry traces,
-  per-tenant latency and error metrics, and alerts on queue depth and classification accuracy.
-- **Retention.** Hot 90 days, warm to a year, cold to object storage.
+- **PostgreSQL.** SQLite takes one writer; 10M a day is about 115 writes a second sustained, with
+  much higher peaks.
+- **Partition `transactions` by month**, since most queries look at a recent window and old
+  partitions can be detached and archived.
+- **A real queue** with many worker processes, replacing the polling table.
+- **Read replicas** for dashboards and listings, which tolerate replica lag.
+- **Pre-aggregated dashboard totals** per tenant, day and category instead of summing per request.
+- **Connection pooling** with PgBouncer.
+- **Backpressure**: per-tenant rate limits, a bounded queue, 429 with `Retry-After`.
+- **Observability**: traces built on the existing correlation id, per-tenant latency and error
+  metrics, alerts on queue depth and on how often humans correct the machine.
+- **Retention**: hot for 90 days, then archive.
 
-Honest ordering: PostgreSQL and a real queue first, pre-aggregation second, partitioning only when
-the table size demands it. Load-test each step rather than assuming.
+I would do PostgreSQL and the queue first, pre-aggregation next, and partitioning only when table
+size actually demands it, load-testing each step.
 
-### 4. A customer's finance team no longer trusts the dashboard
+### 4. A finance team no longer trusts the categories
 
-**Investigate with evidence, not reassurance.** The audit trail already answers the key questions
-per transaction: what the machine decided, which provider and version, with what confidence, and
-what a human changed it to. I would pull their corrections over the period and group them — a trust
-problem is rarely uniform, it is usually one merchant or one rule systematically wrong. If 60% of
-corrections are one counterparty, that is a one-line rule fix, not an AI problem.
+Start with evidence. The audit history already says what the machine decided, with which provider
+and confidence, and what the customer changed it to, so I would pull their corrections for the
+period and group them. Distrust is rarely spread evenly; it is usually one merchant or one rule
+that is consistently wrong, which is a rule fix rather than a model problem.
 
-**Fix in layers.** Immediately: add deterministic rules for the merchants they are correcting, so
-the error cannot recur. Then raise the confidence threshold for that tenant, which routes more
-transactions to review — slower, but trustworthy, and trust is what is broken. Then re-run
-classification over the affected period; manual corrections are protected from being overwritten,
-so their work is never lost.
+Then fix it in layers: add deterministic rules for the merchants they keep correcting, raise the
+confidence threshold for that tenant so more transactions go to review instead of straight to the
+dashboard, and re-run classification over the affected period. Their corrections are protected, so
+re-running cannot undo their work.
 
-**Make the system legible.** Every classification already carries a human-readable reason and a
-confidence score, both surfaced in the UI; provisional categories are visibly marked rather than
-presented as fact. A finance team that can see *why* a transaction was categorised, and that
-"Utilities — matched 'IKEDC'" differs from "Other — model was unsure", stops experiencing the tool
-as a black box.
-
-**Then prove it.** Report correction rate as a tracked metric, per tenant and per category, and
-show it falling. Add an alert when corrections for a category exceed a threshold, so the next
-regression is found by us rather than by the customer.
-
-*Implemented here:* append-only history, preserved original, protected manual corrections, reasons
-and confidence on every decision, configurable thresholds, a review queue, reclassification that
-respects human decisions.
-
----
+The product side matters as much. Every category carries a reason and a confidence, and provisional
+ones are marked as provisional instead of being presented as fact, so "Utilities, matched IKEDC"
+reads differently from "Other, model was unsure". Finally, track the correction rate per tenant and
+per category and show it falling, with an alert when it climbs, so the next regression is caught
+here rather than by the customer.
 
 ## Known limitations
 
-Deliberate, given the prototype scope:
-
-1. **SQLite and an in-process worker** are assessment-scale. Covered above.
-2. **The AI provider is a mock.** A real one is an implementation of a one-method interface; the
-   failure handling around it is real and tested.
-3. **Roles are thin** — `OWNER`/`MEMBER` exist but are not enforced as distinct permissions. Tenant
-   isolation, which is the security property that matters here, is enforced and tested.
-4. **No refresh tokens.** A 12-hour JWT and client-side logout; a denylist would go where the
-   logout endpoint is.
-5. **Search is `LIKE`-based.** Fine for seeded volumes, not for millions — needs trigram or a
-   search index.
-6. **No UI for importing transactions** — ingestion is exercised through the API and tests. The UI
+1. SQLite and an in-process worker are fine for this exercise and not for production.
+2. The AI provider is a mock. A real one implements the same one-method interface; the failure
+   handling around it is real.
+3. `OWNER` and `MEMBER` exist but are not enforced as different permissions. Tenant isolation is.
+4. No refresh tokens. A 12-hour JWT and client-side logout; a denylist would go where the logout
+   endpoint is.
+5. Search uses `LIKE`, which is fine at this size and not at millions of rows.
+6. There is no import screen in the UI. Ingestion is covered by the API and the tests, and the UI
    covers the three screens the brief asks for.
-7. **Dashboard aggregates are computed per request.** Correct and indexed, but pre-aggregation is
-   needed at volume.
-8. **No E2E browser tests.** The API contracts behind every screen are integration-tested; the
-   rendering is not.
+7. Dashboard totals are computed per request.
+8. No browser tests. The APIs behind each screen are integration-tested, the rendering is not.
 
-## What production would need beyond this
+## For production
 
-Secrets in a managed store rather than `.env`; TLS and a reverse proxy; structured log shipping
-with OpenTelemetry traces; per-tenant rate limits and quotas; database backups with tested restore;
-blue/green deploys with migration gating; an on-call runbook for provider outages and queue
-backlogs; SOC2-shaped access logging on financial records; and a data-retention policy.
+Secrets in a managed store instead of `.env`, TLS behind a reverse proxy, log shipping with traces,
+per-tenant rate limits and quotas, backups with a tested restore, migration-gated deploys, a runbook
+for provider outages and queue backlogs, access logging on financial records, and a retention
+policy.
