@@ -83,11 +83,9 @@ export class CreateTransactionDto {
 
 export class BatchCreateTransactionsDto {
   /**
-   * Deliberately typed loosely at the envelope level. If each item were
-   * validated by the global pipe, one malformed row would reject the whole
-   * batch with a 400 - the opposite of the partial-success behaviour a bulk
-   * import needs. Items are validated individually inside the service and
-   * reported per row.
+   * Loosely typed on purpose: if the global pipe validated each item, one
+   * malformed row would reject the whole batch - the opposite of what a bulk
+   * import needs. The service validates and reports rows individually.
    */
   @ApiProperty({
     type: [CreateTransactionDto],

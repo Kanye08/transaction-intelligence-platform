@@ -9,3 +9,7 @@ process.env.LOG_LEVEL = 'silent';
 process.env.WORKER_ENABLED = 'false';
 process.env.BCRYPT_ROUNDS = '4';
 process.env.LOGIN_RATE_LIMIT = '25';
+// A small attempt budget keeps the exhaustion test quick. The backoff stays at
+// its normal length so a rescheduled retry is not immediately re-claimable:
+// tests force the next attempt explicitly with makeRetriesDue().
+process.env.CLASSIFICATION_MAX_ATTEMPTS = '5';

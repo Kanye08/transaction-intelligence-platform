@@ -38,13 +38,10 @@ interface TransactionRow {
 const HISTORY_LIMIT = 120;
 
 /**
- * Transaction review: four independent detectors.
- *
- * Each rule is a separate method with no shared state, so each can be tested
- * and tuned on its own, and a rule that proves noisy can be disabled without
- * touching the others. Every flag carries a human-readable explanation and the
- * numbers behind it - a flag a reviewer cannot understand is worse than no
- * flag at all.
+ * Four independent detectors. Each is a separate method with no shared state, so
+ * each can be tested and tuned alone, and a noisy one can be dropped without
+ * touching the others. Every flag carries an explanation and the numbers behind
+ * it: a flag a reviewer cannot understand is worse than no flag.
  */
 @Injectable()
 export class ReviewDetectionService {
@@ -82,12 +79,10 @@ export class ReviewDetectionService {
   }
 
   /**
-   * A. Possible duplicate.
-   *
-   * Not the same thing as the exact duplicate the unique constraint already
-   * rejects at ingestion: this is the same amount to the same account within a
-   * short window under a *different* reference - a double-paid invoice, or the
-   * same file imported twice from two sources.
+   * A. Possible duplicate - not the exact duplicate the unique constraint
+   * already rejects at ingestion, but the same amount to the same account within
+   * a short window under a different reference: a double-paid invoice, or one
+   * file imported twice from two sources.
    */
   async detectPossibleDuplicate(
     db: ScopedPrisma,
@@ -139,10 +134,8 @@ export class ReviewDetectionService {
   }
 
   /**
-   * B. Unusually large.
-   *
-   * Compared against the same account and direction, because an account that
-   * pays salaries has a different normal from one that buys airtime.
+   * B. Unusually large, compared against the same account and direction: an
+   * account that pays salaries has a different normal from one buying airtime.
    */
   async detectUnusuallyLarge(
     db: ScopedPrisma,
@@ -192,10 +185,8 @@ export class ReviewDetectionService {
   }
 
   /**
-   * C. Low-confidence classification.
-   *
-   * The transaction is categorised, but not confidently enough to be trusted
-   * in a report without a human glance.
+   * C. Low confidence: categorised, but not confidently enough to be trusted in
+   * a report without a human glance.
    */
   detectLowConfidence(transaction: TransactionRow): Detection | null {
     const threshold = this.config.classification.lowConfidenceReviewThreshold;
@@ -225,10 +216,8 @@ export class ReviewDetectionService {
   }
 
   /**
-   * D. Unusual frequency.
-   *
-   * The same counterparty paid an unusual number of times inside the window -
-   * a retry loop, a subscription billed repeatedly, or a compromised card.
+   * D. Unusual frequency: the same counterparty paid an unusual number of times
+   * in the window - a retry loop, repeated billing, or a compromised card.
    */
   async detectUnusualFrequency(
     db: ScopedPrisma,
@@ -265,11 +254,8 @@ export class ReviewDetectionService {
     };
   }
 
-  /**
-   * One open flag per rule per transaction. Re-running detection is therefore
-   * safe and idempotent, which it has to be: the worker can retry, and the
-   * seed script runs detection over the whole dataset.
-   */
+  /** One flag per rule per transaction, so re-running detection is idempotent -
+   *  which it has to be, because the worker retries. */
   private async persistFlag(
     db: ScopedPrisma,
     organisationId: string,

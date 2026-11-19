@@ -17,19 +17,14 @@ interface ClaimedJob {
 }
 
 /**
- * Database-backed background worker.
+ * A database-backed queue: a table, a poll loop and an atomic claim. That is
+ * enough for one process and thousands of jobs, and it keeps Redis out of the
+ * prerequisites. At real volume this is replaced by BullMQ or SQS, with
+ * JobsService as the seam - nothing above it changes.
  *
- * Scope note, honestly stated: this is an assessment-scale queue. A table, a
- * poll loop and an atomic claim are enough for one process and thousands of
- * jobs, and they avoid making Redis a prerequisite for running the project.
- * At real volume this is replaced by BullMQ/SQS - the JobsService interface
- * is the seam where that swap happens, and nothing above it changes.
- *
- * What it does get right, because these are the parts that bite:
- *  - claiming is atomic, so two workers cannot take the same job;
- *  - retries are bounded, with exponential backoff and full jitter;
- *  - jobs left PROCESSING by a crash are recovered on the next boot;
- *  - a provider failure never damages the transaction that is already stored.
+ * What it does get right: claiming is atomic, retries are bounded with jittered
+ * backoff, jobs left in flight by a crash are recovered on boot, and a provider
+ * failure never damages a stored transaction.
  */
 @Injectable()
 export class JobsWorker implements OnApplicationBootstrap, OnModuleDestroy {
@@ -62,11 +57,8 @@ export class JobsWorker implements OnApplicationBootstrap, OnModuleDestroy {
     if (this.timer) clearTimeout(this.timer);
   }
 
-  /**
-   * Jobs that were being processed when the process died are still marked
-   * PROCESSING. On boot they go back into the queue, which is what makes
-   * "restart the app" a safe operation.
-   */
+  /** Jobs still marked PROCESSING belong to a process that died. Returning them
+   *  to the queue is what makes "restart the app" safe. */
   async recoverStuckJobs(): Promise<number> {
     const { count } = await this.prisma.job.updateMany({
       where: { status: 'PROCESSING' },
@@ -118,10 +110,8 @@ export class JobsWorker implements OnApplicationBootstrap, OnModuleDestroy {
     return total;
   }
 
-  /**
-   * Atomic claim: UPDATE ... WHERE id = ? AND status = 'PENDING' succeeds for
-   * exactly one worker. A SELECT-then-UPDATE would hand the same job to two.
-   */
+  /** UPDATE ... WHERE status = 'PENDING' succeeds for exactly one worker; a
+   *  SELECT-then-UPDATE would hand the same job to two. */
   private async claimNext(): Promise<ClaimedJob | null> {
     const candidate = await this.prisma.job.findFirst({
       where: { status: 'PENDING', runAt: { lte: new Date() } },
@@ -170,14 +160,14 @@ export class JobsWorker implements OnApplicationBootstrap, OnModuleDestroy {
           );
 
           if (outcome.retry) {
-            // The provider was degraded: keep the provisional answer, try
-            // again later with backoff so recovery is automatic.
+            // Provider degraded: keep the provisional answer and try again with
+            // backoff, so recovery is automatic.
             await this.reschedule(job, 'Provider degraded; scheduled another attempt');
             return;
           }
 
-          // Anomaly detection runs after classification so that
-          // low-confidence results can be flagged in the same pass.
+          // After classification, so low-confidence results are flagged in the
+          // same pass.
           if (outcome.applied) {
             await this.detection.runForTransaction(job.organisationId, transactionId);
           }
@@ -217,7 +207,11 @@ export class JobsWorker implements OnApplicationBootstrap, OnModuleDestroy {
   }
 
   private async reschedule(job: ClaimedJob, reason: string): Promise<void> {
-    const delay = backoffDelayMs(job.attempts);
+    const delay = backoffDelayMs(
+      job.attempts,
+      this.config.classification.retryBaseMs,
+      this.config.classification.retryMaxMs,
+    );
     await this.prisma.job.update({
       where: { id: job.id },
       data: {

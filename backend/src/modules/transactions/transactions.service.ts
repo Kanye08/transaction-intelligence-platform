@@ -1,8 +1,9 @@
-import { Injectable, Logger, NotFoundException } from '@nestjs/common';
+import { Inject, Injectable, Logger, NotFoundException } from '@nestjs/common';
 import { plainToInstance } from 'class-transformer';
 import { validate } from 'class-validator';
 
 import { AuthUser } from '../../common/auth/auth-user';
+import { AppConfig, CONFIG_TOKEN } from '../../config/configuration';
 import { Money } from '../../common/money/money';
 import { PrismaService } from '../../common/prisma/prisma.service';
 import { ScopedPrisma, TenantPrismaService } from '../../common/tenancy/tenant-prisma.service';
@@ -39,16 +40,13 @@ const INCLUDE_FOR_VIEW = {
 } as const;
 
 /**
- * Transaction ingestion.
+ * Ingestion writes the row and schedules a job; whether the classification
+ * provider is healthy, slow or on fire is the worker's problem.
  *
- * Two rules shape this service:
- *  1. Persisting a transaction must never depend on the classification
- *     provider. Ingestion writes the row and schedules a job; whether the
- *     provider is healthy, slow or on fire is the worker's problem.
- *  2. Duplicate prevention is a database guarantee, not a check. The unique
- *     index on (organisationId, accountId, externalReference) is what makes
- *     concurrent imports of the same transaction safe; the code merely
- *     translates the resulting constraint violation into a clean response.
+ * Duplicate prevention is the unique index on
+ * (organisationId, accountId, externalReference), not a pre-check - that is what
+ * makes concurrent imports of the same transaction safe. The code only turns the
+ * constraint violation into a clean response.
  */
 @Injectable()
 export class TransactionsService {
@@ -57,6 +55,7 @@ export class TransactionsService {
   constructor(
     private readonly tenantPrisma: TenantPrismaService,
     private readonly jobs: JobsService,
+    @Inject(CONFIG_TOKEN) private readonly config: AppConfig,
   ) {}
 
   async ingestOne(user: AuthUser, dto: CreateTransactionDto): Promise<IngestResult> {
@@ -65,10 +64,8 @@ export class TransactionsService {
     return this.persist(db, user.organisationId, dto);
   }
 
-  /**
-   * Batch ingestion with partial success: every row is validated and written
-   * independently, so one bad row costs one row rather than the whole import.
-   */
+  /** Every row is validated and written independently, so one bad row costs one
+   *  row rather than the whole import. */
   async ingestBatch(user: AuthUser, items: unknown[]): Promise<BatchResult> {
     const db = this.tenantPrisma.forOrganisation(user.organisationId);
     const results: BatchItemResult[] = [];
@@ -149,10 +146,8 @@ export class TransactionsService {
     };
   }
 
-  /**
-   * Writes the transaction and schedules its classification in one database
-   * transaction, then reports whether the row was new or a duplicate.
-   */
+  /** Writes the transaction and schedules its classification in one database
+   *  transaction. */
   private async persist(
     db: ScopedPrisma,
     organisationId: string,
@@ -187,6 +182,7 @@ export class TransactionsService {
             organisationId,
             type: 'CLASSIFY_TRANSACTION',
             payload: { transactionId: transaction.id },
+            maxAttempts: this.config.classification.maxAttempts,
           },
           tx as unknown as JobWriter,
         );
@@ -198,8 +194,8 @@ export class TransactionsService {
     } catch (error) {
       if (!PrismaService.isUniqueViolation(error)) throw error;
 
-      // The database refused the duplicate. Return the row that won the race
-      // so concurrent callers all see the same, single transaction.
+      // The database refused the duplicate: return the row that won the race, so
+      // concurrent callers all see the same single transaction.
       const existing = await db.transaction.findFirst({
         where: { accountId: dto.accountId, externalReference: dto.externalReference },
         include: INCLUDE_FOR_VIEW,

@@ -28,21 +28,16 @@ export interface ClassificationResult {
   /** Plain-language justification, surfaced in the audit trail and the UI. */
   reason: string;
   matchedRule?: string;
-  /**
-   * True when the answer is a degraded fallback: the model was needed but
-   * unavailable, so a weaker result is being returned. The caller decides
-   * whether to retry later - the data is usable in the meantime.
-   */
+  /** The model was needed but unavailable, so this is a weaker fallback answer.
+   *  The caller decides whether to retry; the data is usable meanwhile. */
   degraded?: boolean;
   degradedReason?: string;
 }
 
 /**
- * The seam that makes the classifier replaceable.
- *
- * Ingestion, the worker, the audit trail and the API know only this interface.
- * Swapping the mock LLM for a real one, or adding a fine-tuned model, is a new
- * implementation and a configuration change - no changes to business logic.
+ * The seam that makes the classifier replaceable: ingestion, the worker, the
+ * audit trail and the API know only this interface. Swapping the mock LLM for a
+ * real one is a new implementation and a config change.
  */
 export interface ClassificationProvider {
   readonly name: string;
@@ -82,12 +77,10 @@ export class InvalidProviderResponseError extends Error {
 }
 
 /**
- * Strict validation of whatever a provider returns.
- *
- * An LLM can and will produce a category that does not exist, a confidence of
- * "high", or prose instead of JSON. Nothing reaches the database before it has
- * passed through here, so a hallucinated category becomes a handled provider
- * failure rather than corrupt financial data.
+ * An LLM will eventually return a category that does not exist, a confidence of
+ * "high", or prose instead of JSON. Nothing reaches the database without passing
+ * through here, so a hallucination becomes a handled failure rather than corrupt
+ * financial data.
  */
 export function parseProviderResult(
   raw: unknown,

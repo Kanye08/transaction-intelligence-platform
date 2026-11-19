@@ -8,13 +8,10 @@ export class InvalidStateTransitionError extends Error {
 }
 
 /**
- * The classification lifecycle, written down once.
- *
- * The rule that matters commercially is the last one: once a human has set a
- * category (MANUAL), no automated process may change it. A queued job that
- * was created before the correction must not quietly undo the correction when
- * it finally runs - that is precisely the behaviour that destroys trust in an
- * AI feature.
+ * The lifecycle, written down once. The rule that matters commercially: once a
+ * human sets a category, no automated process may change it. A job queued before
+ * the correction must not undo it when it finally runs - that is exactly what
+ * destroys trust in an AI feature.
  */
 const AUTOMATED_TARGETS: ClassificationStatus[] = [
   'CLASSIFIED',
@@ -58,11 +55,9 @@ export function isAutomationAllowed(status: ClassificationStatus): boolean {
 }
 
 /**
- * Chooses the resulting status for an automated decision.
- *   - degraded answers are retried, so they stay FAILED_RETRYING while
- *     attempts remain, and settle as PROVISIONAL when they run out;
- *   - confident answers are CLASSIFIED;
- *   - anything below the threshold is PROVISIONAL and stays reviewable.
+ * Degraded answers stay FAILED_RETRYING while attempts remain and settle as
+ * PROVISIONAL when they run out; confident answers are CLASSIFIED; anything
+ * below the threshold is PROVISIONAL and stays reviewable.
  */
 export function statusForAutomatedResult(input: {
   confidence: number;

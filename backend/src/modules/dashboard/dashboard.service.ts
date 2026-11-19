@@ -43,12 +43,9 @@ export interface DashboardSummary {
 }
 
 /**
- * Dashboard aggregates.
- *
- * Every figure is computed by the database (GROUP BY / SUM), not by loading
- * transactions into memory: the API cost of the dashboard must not grow with
- * the size of the tenant. Sums come back as BigInt kobo and are formatted at
- * the edge, so the totals are exact at any volume.
+ * Every figure is a GROUP BY / SUM in the database rather than transactions
+ * loaded into memory, so the cost of the dashboard does not grow with the size
+ * of the tenant. Sums come back as BigInt kobo and are formatted at the edge.
  */
 @Injectable()
 export class DashboardService {
@@ -156,10 +153,7 @@ export class DashboardService {
     };
   }
 
-  /**
-   * Prisma returns SUM over a BigInt column as BigInt, and an empty group as
-   * null - an empty dataset must read as zero, not NaN.
-   */
+  /** Prisma returns an empty group as null; an empty dataset must read as zero. */
   private sumFor(
     rows: { direction: string; _sum: { amountMinor: bigint | null } }[],
     direction: string,

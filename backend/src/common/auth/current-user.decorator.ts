@@ -3,10 +3,7 @@ import type { Request } from 'express';
 
 import { AuthUser } from './auth-user';
 
-/**
- * Injects the authenticated principal. The organisation id on it is the only
- * tenant identifier the application trusts.
- */
+/** The authenticated principal. Its organisation id is the only tenant id we trust. */
 export const CurrentUser = createParamDecorator((_data: unknown, ctx: ExecutionContext): AuthUser => {
   const request = ctx.switchToHttp().getRequest<Request & { user?: AuthUser }>();
   if (!request.user) {

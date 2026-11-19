@@ -15,14 +15,10 @@ export interface CircuitBreakerOptions {
 }
 
 /**
- * Circuit breaker.
- *
- * After `failureThreshold` consecutive failures the circuit opens and calls
- * fail immediately for `resetMs`. This matters at scale: when a provider is
- * down, the worst thing a queue of hundreds of thousands of jobs can do is
- * keep calling it - each attempt costs a timeout, holds a connection and
- * delays the recovery of the provider itself. One probe call (HALF_OPEN)
- * decides whether service has returned.
+ * After `failureThreshold` consecutive failures the circuit opens and calls fail
+ * immediately for `resetMs`. When a provider is down, the worst thing a queue of
+ * pending jobs can do is keep calling it: every attempt costs a timeout and
+ * delays the provider's own recovery. One HALF_OPEN probe decides when it is back.
  */
 export class CircuitBreaker {
   private failures = 0;
@@ -86,7 +82,6 @@ export class CircuitBreaker {
   private refresh(): void {
     if (this.state === 'OPEN' && this.now() - this.openedAt >= this.options.resetMs) {
       this.state = 'HALF_OPEN';
-      // One call is let through; its outcome closes or re-opens the circuit.
       this.failures = this.options.failureThreshold - 1;
     }
   }
@@ -112,11 +107,8 @@ export async function withTimeout<T>(
 }
 
 /**
- * Exponential backoff with full jitter.
- *
- * Jitter is not decoration: without it, every job that failed during an
- * outage retries at the same instant and re-creates the outage. Full jitter
- * spreads the retries across the whole window.
+ * Exponential backoff with full jitter. Without jitter, every job that failed
+ * during an outage retries at the same instant and recreates it.
  */
 export function backoffDelayMs(attempt: number, baseMs = 1000, maxMs = 5 * 60_000): number {
   const exponential = Math.min(maxMs, baseMs * 2 ** Math.max(0, attempt - 1));

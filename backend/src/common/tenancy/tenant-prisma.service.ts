@@ -3,17 +3,12 @@ import { Injectable, InternalServerErrorException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 
 /**
- * Tenant isolation, enforced in one place.
+ * Tenant isolation, in one place. Callers get a Prisma client extended to inject
+ * the organisation filter into every operation on every tenant-owned model, and
+ * to refuse operations it does not know how to scope. A service cannot forget
+ * the filter, because the only route to tenant data already carries it.
  *
- * Instead of every service remembering to add `organisationId` to every query,
- * callers obtain a scoped client from here. A Prisma client extension injects
- * the tenant filter into every operation on every tenant-owned model, and
- * refuses to run operations it does not know how to scope. Forgetting the
- * filter is therefore not something a service *can* do: the only way to reach
- * tenant data is through a client that already carries the boundary.
- *
- * The organisation id always comes from the verified JWT (see JwtAuthGuard),
- * never from a request body, query string or path parameter.
+ * The organisation id always comes from the verified JWT, never from a request.
  */
 
 /** Models that belong to exactly one organisation. */
@@ -64,9 +59,8 @@ export class TenantPrismaService {
 
   constructor(private readonly prisma: PrismaService) {}
 
-  /** The unscoped client, for the few genuinely cross-tenant operations
-   *  (login by email, the background worker claiming jobs). Every use is
-   *  deliberate and reviewed. */
+  /** Unscoped, for the few genuinely cross-tenant operations: login by email,
+   *  and the worker claiming jobs. */
   get raw(): PrismaService {
     return this.prisma;
   }

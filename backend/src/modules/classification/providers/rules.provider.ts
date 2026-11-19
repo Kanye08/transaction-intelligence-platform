@@ -19,14 +19,12 @@ interface Rule {
 }
 
 /**
- * Deterministic rules for the Nigerian market.
+ * Deterministic rules for the Nigerian market. These carry most of the traffic:
+ * free, instant and auditable, which is what a finance team wants for the
+ * transactions that are obviously salary, PAYE, DSTV or a bank charge. The model
+ * handles what is left (see HybridClassificationProvider).
  *
- * These carry most of the traffic: they are free, instant, reproducible and
- * auditable, which is exactly what a finance team wants for the 80% of
- * transactions that are obviously salary, PAYE, DSTV or a bank charge. The
- * LLM is reserved for what is left over - see HybridClassificationProvider.
- *
- * Ordered most specific first; the first match wins.
+ * Most specific first; first match wins.
  */
 const RULES: Rule[] = [
   {
@@ -287,9 +285,9 @@ export class RulesClassificationProvider implements ClassificationProvider {
       };
     }
 
-    // Nothing matched. Returning OTHER at low confidence is honest: it says
-    // "unclassified", keeps the transaction reviewable, and lets the hybrid
-    // strategy decide whether the LLM is worth the money.
+    // Nothing matched. OTHER at low confidence is honest: it keeps the
+    // transaction reviewable and lets the hybrid strategy decide if the model is
+    // worth the money.
     return {
       category: 'OTHER',
       confidence: 0.2,

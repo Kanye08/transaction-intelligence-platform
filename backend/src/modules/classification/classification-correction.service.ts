@@ -27,14 +27,10 @@ export interface ClassificationHistoryEntry {
 }
 
 /**
- * Manual classification corrections.
- *
- * Three things must survive a correction, because they are what a customer
- * asks for when they stop trusting the categories:
- *   1. the original automated decision, so "what did the model say?" is
- *      answerable months later;
- *   2. who changed it, when, and why;
- *   3. the guarantee that no queued job will quietly undo the change.
+ * Three things must survive a correction, because they are what a customer asks
+ * for when they stop trusting the categories: the original automated decision,
+ * so "what did the model say?" is answerable months later; who changed it, when
+ * and why; and the guarantee that no queued job will undo it.
  */
 @Injectable()
 export class ClassificationCorrectionService {

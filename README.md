@@ -43,7 +43,7 @@ Sign in as each to see that the two tenants share nothing.
 | `npm run setup` | Migrate, build, seed, classify. Safe to re-run. |
 | `npm start` | Production mode: API and compiled frontend on port 3000. |
 | `npm run dev` | API on 3000 with watch, Vite on 5173 with a proxy. |
-| `npm test` | Full suite: 197 tests. |
+| `npm test` | Full suite: 198 tests. |
 | `npm run test:unit` / `npm run test:e2e` | Unit only / integration only. |
 | `npm run typecheck` | `tsc --noEmit` on both workspaces. |
 | `npm run db:reset` | Drop, re-migrate, re-seed, re-classify. |
@@ -305,7 +305,7 @@ code changes, because all database access already goes through the scoped client
 
 ## Testing
 
-**197 tests, all passing** (`npm test`), across 13 suites.
+**198 tests, all passing** (`npm test`), across 13 suites.
 
 | Area | Coverage |
 |---|---|
@@ -333,7 +333,9 @@ not.
 
 The queue absorbs the backlog durably — it is a database table, so a restart loses nothing. Retries
 are bounded with exponential backoff and full jitter, so a few hundred thousand jobs do not
-stampede the provider the moment it recovers. After five consecutive failures the circuit breaker
+stampede the provider the moment it recovers. The default budget — 10 attempts, 2-minute base,
+30-minute cap — is sized so a six-hour outage is survived without a transaction falling out of the
+retry cycle; a longer one leaves transactions `PROVISIONAL` in the review queue rather than wrong. After five consecutive failures the circuit breaker
 opens and calls fail fast instead of burning a timeout each: during the outage the provider is
 called a handful of times, not hundreds of thousands. Hybrid degrades rather than failing —
 deterministic rules still classify most transactions, and the rest keep the best available answer

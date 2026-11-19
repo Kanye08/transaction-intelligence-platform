@@ -28,13 +28,11 @@ function stableStringify(value: unknown): string {
 }
 
 /**
- * Idempotency-Key support for ingestion.
- *
- * The guarantee rests on a unique constraint on (organisationId, key), not on
- * a read-then-write check: two concurrent requests with the same key both try
- * to insert, the database lets exactly one through, and the loser is told the
- * request is already in flight. Replaying a completed key returns the original
- * response; reusing a key with a different payload is a 409.
+ * Idempotency-Key support, resting on the unique constraint on
+ * (organisationId, key) rather than a read-then-write check: two concurrent
+ * requests both insert, the database lets one through, and the loser is told the
+ * request is in flight. A completed key replays its original response; the same
+ * key with a different payload is a 409.
  */
 @Injectable()
 export class IdempotencyService {
@@ -62,9 +60,8 @@ export class IdempotencyService {
 
     const existing = await db.idempotencyRecord.findFirst({ where: { key } });
     if (!existing) {
-      // The row vanished between insert and read (another tenant's cleanup or
-      // a rollback). Treating it as a fresh request is safe: the transaction
-      // unique constraint is still the final guard against duplicates.
+      // The row vanished between insert and read. Treating it as fresh is safe:
+      // the transaction unique constraint is still the final guard.
       return { replayed: false };
     }
 

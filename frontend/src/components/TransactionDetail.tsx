@@ -25,9 +25,8 @@ interface Props {
 }
 
 /**
- * Everything known about one transaction: the money, the classification, why
- * it was flagged, and the full decision history - plus the two actions a
- * reviewer actually needs (correct the category, ask for reclassification).
+ * Everything known about one transaction - money, classification, why it was
+ * flagged, full decision history - plus the two actions a reviewer needs.
  */
 export function TransactionDetail({ transactionId, onClose, onChanged }: Props) {
   const [transaction, setTransaction] = useState<Transaction | null>(null);

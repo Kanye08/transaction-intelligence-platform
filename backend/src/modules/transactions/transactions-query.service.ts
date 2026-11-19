@@ -42,12 +42,9 @@ function decodeCursor(cursor: string): { transactionDate: Date; id: string } {
 }
 
 /**
- * Reads.
- *
- * Listing uses keyset (cursor) pagination ordered by (transactionDate, id):
- * page 10,000 costs the same as page 1, where OFFSET would make the database
- * walk every skipped row. The total count is opt-in for the same reason - it
- * is the expensive half of a listing query on a large tenant.
+ * Listing uses keyset pagination on (transactionDate, id), so page 10,000 costs
+ * what page 1 costs - OFFSET would walk every skipped row. The total count is
+ * opt-in for the same reason: it is the expensive half of the query.
  */
 @Injectable()
 export class TransactionsQueryService {

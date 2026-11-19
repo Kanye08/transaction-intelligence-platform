@@ -2,13 +2,8 @@ import { Injectable, Logger, OnModuleDestroy, OnModuleInit } from '@nestjs/commo
 import { Prisma, PrismaClient } from '@prisma/client';
 
 /**
- * Thin wrapper around PrismaClient.
- *
- * It is the single place where database connection concerns live, which keeps
- * the swap to PostgreSQL a datasource change rather than a code change. The
- * SQLite pragmas below exist because the assessment runs concurrent ingestion
- * tests: WAL plus a busy timeout turn "database is locked" errors into short
- * waits, which is the closest SQLite gets to row-level concurrency.
+ * The one place database connection concerns live, so moving to PostgreSQL is a
+ * datasource change rather than a code change.
  */
 @Injectable()
 export class PrismaService extends PrismaClient implements OnModuleInit, OnModuleDestroy {
@@ -16,9 +11,8 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   constructor() {
     super({
-      // Expected constraint violations (duplicate ingestion, idempotent flag
-      // creation) are handled in code, so Prisma's own error logging is noise
-      // during tests. PRISMA_LOG=query turns on statement logging when needed.
+      // Duplicate ingestion and repeat flagging raise constraint errors that are
+      // handled in code, so Prisma's own logging is noise during tests.
       log:
         process.env.PRISMA_LOG === 'query'
           ? [{ emit: 'stdout', level: 'query' }]
@@ -39,14 +33,11 @@ export class PrismaService extends PrismaClient implements OnModuleInit, OnModul
 
   private async applySqlitePragmas(): Promise<void> {
     try {
-      // Several PRAGMAs return a row, so all of them go through queryRaw.
+      // WAL plus a busy timeout is as close as SQLite gets to concurrent writers,
+      // and NORMAL avoids an fsync per commit - worth it for a local database
+      // seeding thousands of jobs. Several PRAGMAs return a row, hence queryRaw.
       await this.$queryRawUnsafe('PRAGMA journal_mode = WAL;');
       await this.$queryRawUnsafe('PRAGMA busy_timeout = 5000;');
-      // With WAL, NORMAL keeps durability against process crashes and only
-      // risks the last commits on an OS-level crash, in exchange for not
-      // fsyncing on every commit. For a local development database driving
-      // thousands of seeded jobs that trade is clearly worth it; a production
-      // PostgreSQL deployment has nothing equivalent to tune here.
       await this.$queryRawUnsafe('PRAGMA synchronous = NORMAL;');
       await this.$queryRawUnsafe('PRAGMA foreign_keys = ON;');
     } catch (error) {

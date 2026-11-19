@@ -1,12 +1,8 @@
 /**
- * Drains the background job queue and exits.
- *
- * Used by `npm run setup` so a fresh install arrives with its seeded
- * transactions already classified and reviewed, and available on its own as
- * `npm run db:classify` when the queue has been left to build up.
- *
- * It runs the real worker against the real providers - there is no separate
- * "seeding" classification path that could drift from production behaviour.
+ * Drains the job queue and exits. Used by `npm run setup` so a fresh install
+ * arrives already classified, and available as `npm run db:classify`. It runs
+ * the real worker against the real providers - there is no separate seeding path
+ * that could drift from production behaviour.
  */
 import { NestFactory } from '@nestjs/core';
 

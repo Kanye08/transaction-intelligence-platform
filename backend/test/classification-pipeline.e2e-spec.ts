@@ -57,6 +57,13 @@ describe('Classification pipeline (e2e)', () => {
   const makeRetriesDue = () =>
     prisma.job.updateMany({ where: { status: 'PENDING' }, data: { runAt: new Date(0) } });
 
+  /** Same, but only for one transaction's job. */
+  const makeJobDue = (transactionId: string) =>
+    prisma.job.updateMany({
+      where: { status: 'PENDING', payload: { contains: transactionId } },
+      data: { runAt: new Date(0) },
+    });
+
   beforeAll(async () => {
     app = await createTestApp();
     prisma = app.get(PrismaService);
@@ -196,6 +203,34 @@ describe('Classification pipeline (e2e)', () => {
       expect(response.body.id).toBe(id);
       expect(response.body.classification.status).toBe('FAILED_RETRYING');
     });
+
+    it('does not repeat an identical audit entry on every retry', async () => {
+      llm.setMode('failure');
+      const id = await ingest(tokenA, { description: 'Conference sponsorship package', merchant: null });
+
+      // Several failed attempts, all of which fall back to the same rules answer.
+      for (let i = 0; i < 3; i += 1) {
+        await makeJobDue(id);
+        await worker.drain();
+      }
+
+      const events = await prisma.classificationEvent.findMany({ where: { transactionId: id } });
+      expect(events).toHaveLength(1);
+
+      // ...and a genuinely different answer is still recorded. Resetting the
+      // breaker stands in for its cool-off window elapsing.
+      llm.setMode('normal');
+      hybrid.resetMetrics();
+      await makeJobDue(id);
+      await worker.drain();
+
+      const after = await prisma.classificationEvent.findMany({
+        where: { transactionId: id },
+        orderBy: { createdAt: 'asc' },
+      });
+      expect(after.length).toBeGreaterThan(1);
+      expect(after.at(-1)?.source).toBe('LLM');
+    }, 20000);
 
     it('recovers automatically once the provider comes back', async () => {
       llm.setMode('failure');

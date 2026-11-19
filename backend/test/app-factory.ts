@@ -7,10 +7,8 @@ import { configureApp } from '../src/main';
 import { AppConfig, CONFIG_TOKEN } from '../src/config/configuration';
 
 /**
- * Builds the real application for integration tests: same modules, same
- * pipes, same exception filter, same guards. Only the database and the logger
- * differ from production, so the tests exercise genuine behaviour rather than
- * a mocked stand-in.
+ * The real application: same modules, pipes, filter and guards. Only the
+ * database and the logger differ from production.
  */
 export async function createTestApp(
   overrides: (builder: ReturnType<typeof Test.createTestingModule>) => void = () => {},

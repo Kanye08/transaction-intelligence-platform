@@ -1,16 +1,9 @@
-// ---------------------------------------------------------------------------
-// Transaction Intelligence Platform - data model
+// Money is stored as integer kobo in BigInt columns; no float is ever persisted.
+// Every tenant-owned row carries organisationId.
 //
-// Design notes
-//  * Money is stored as integer minor units (kobo) in BigInt columns. No
-//    floating point value is ever persisted or used in arithmetic.
-//  * Every tenant-owned row carries organisationId; isolation is enforced in
-//    the data-access layer and backed by indexes + foreign keys here.
-//  * SQLite does not support native Prisma enums, so status columns are
-//    strings constrained by CHECK constraints added in the initial migration
-//    and by TypeScript union types in src/common/domain. On PostgreSQL these
-//    would become real enum types.
-// ---------------------------------------------------------------------------
+// SQLite has no Prisma enums, so status columns are strings held to their values
+// by CHECK constraints in the initial migration and union types in
+// src/common/domain. On PostgreSQL they would be real enums.
 
 generator client {
   provider = "prisma-client-js"
@@ -91,13 +84,13 @@ model Transaction {
   transactionDate   DateTime
 
   // Classification state
-  originalCategory       String? // first automated classification, never overwritten
-  category               String? // current effective category
+  originalCategory       String? // the first automated decision, never overwritten
+  category               String?
   confidence             Float?
   classificationSource   String? // RULES | LLM | MANUAL
   classificationStatus   String    @default("PENDING") // PENDING | CLASSIFIED | PROVISIONAL | FAILED_RETRYING | MANUAL
   classificationProvider String?
-  classificationVersion  Int       @default(0) // guards against stale async writes
+  classificationVersion  Int       @default(0)
   classifiedAt           DateTime?
 
   createdAt DateTime @default(now())
@@ -108,7 +101,7 @@ model Transaction {
   classificationEvents ClassificationEvent[]
   reviewFlags          ReviewFlag[]
 
-  // The database is the final authority on duplicate ingestion.
+  // The final authority on duplicate ingestion.
   @@unique([organisationId, accountId, externalReference])
   @@index([organisationId, transactionDate, id])
   @@index([organisationId, classificationStatus])
@@ -164,15 +157,15 @@ model ReviewFlag {
   transaction  Transaction  @relation(fields: [transactionId], references: [id], onDelete: Cascade)
   resolvedBy   User?        @relation("ReviewFlagResolver", fields: [resolvedByUserId], references: [id], onDelete: SetNull)
 
-  // One flag per rule per transaction: detection stays re-runnable and idempotent.
+  // One flag per rule per transaction, so detection stays idempotent.
   @@unique([transactionId, rule])
   @@index([organisationId, status, createdAt])
   @@index([organisationId, rule])
   @@map("review_flags")
 }
 
-/// Database-backed job queue. Deliberately simple: adequate for assessment
-/// scale, replaceable by BullMQ/SQS without touching the calling code.
+/// Deliberately simple: adequate at this scale, replaceable by BullMQ or SQS
+/// without touching the calling code.
 model Job {
   id             String  @id @default(cuid())
   organisationId String?

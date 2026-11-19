@@ -14,10 +14,7 @@ import type {
 
 const TOKEN_KEY = 'sycamore.token';
 
-/**
- * Error carrying the API's RFC 7807 problem details, so screens can show the
- * server's own message instead of inventing one.
- */
+/** Carries the API's problem details, so screens show the server's own message. */
 export class ApiError extends Error {
   constructor(
     readonly status: number,

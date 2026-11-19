@@ -16,9 +16,8 @@ import { requestIdMiddleware } from './common/middleware/request-id.middleware';
 import { AppConfig, CONFIG_TOKEN } from './config/configuration';
 
 /**
- * Defensive fallback only. The API contract is that money is serialised by the
- * response DTOs (amount / amountMinor / formattedAmount strings); this merely
- * guarantees that an accidental BigInt can never crash JSON.stringify.
+ * A safety net only - the contract is that response DTOs serialise money as
+ * strings. This just means a stray BigInt cannot crash JSON.stringify.
  */
 (BigInt.prototype as unknown as { toJSON: () => string }).toJSON = function toJSON(this: bigint) {
   return this.toString();
@@ -27,9 +26,8 @@ import { AppConfig, CONFIG_TOKEN } from './config/configuration';
 export function configureApp(app: NestExpressApplication, config: AppConfig): void {
   app.use(requestIdMiddleware);
 
-  // Strict security headers everywhere, with one carve-out: the Swagger UI
-  // page bootstraps itself with an inline script, which a strict script-src
-  // would block. Only the docs route gets the relaxed policy.
+  // Strict headers everywhere except the Swagger page, which bootstraps itself
+  // with an inline script that a strict script-src would block.
   const strictHeaders = helmet({ crossOriginEmbedderPolicy: false });
   const docsHeaders = helmet({ contentSecurityPolicy: false, crossOriginEmbedderPolicy: false });
   app.use((req: express.Request, res: express.Response, next: express.NextFunction) =>
@@ -38,9 +36,8 @@ export function configureApp(app: NestExpressApplication, config: AppConfig): vo
   app.set('trust proxy', 1);
   app.enableCors({ origin: true, credentials: true });
 
-  // A 500-row batch import is a few hundred kilobytes; the Express default of
-  // 100kb would reject it. The limit is still bounded, so an oversized body is
-  // refused with 413 rather than being streamed into memory.
+  // A 500-row batch is a few hundred kilobytes and the Express default of 100kb
+  // would reject it. Still bounded: an oversized body gets a 413.
   app.useBodyParser('json', { limit: '5mb' });
 
   app.setGlobalPrefix('api');

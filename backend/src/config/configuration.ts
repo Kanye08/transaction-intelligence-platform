@@ -1,9 +1,6 @@
 /**
- * Typed application configuration.
- *
- * Everything the application can be tuned with lives here, is parsed once at
- * boot and is validated eagerly so a misconfigured deployment fails fast
- * instead of behaving strangely at runtime.
+ * Everything tunable, parsed once at boot and validated eagerly so a
+ * misconfigured deployment fails fast instead of behaving strangely later.
  */
 
 export type ClassificationProviderName = 'rules' | 'mock-llm' | 'hybrid';
@@ -37,6 +34,8 @@ export interface AppConfig {
     /** Confidence below which a transaction is flagged for human review. */
     lowConfidenceReviewThreshold: number;
     maxAttempts: number;
+    retryBaseMs: number;
+    retryMaxMs: number;
     circuitBreakerFailureThreshold: number;
     circuitBreakerResetMs: number;
   };
@@ -145,7 +144,11 @@ export function loadConfig(): AppConfig {
       provider: oneOf('CLASSIFICATION_PROVIDER', ['rules', 'mock-llm', 'hybrid'] as const, 'hybrid'),
       confidenceThreshold: ratio('CLASSIFICATION_CONFIDENCE_THRESHOLD', 0.75),
       lowConfidenceReviewThreshold: ratio('LOW_CONFIDENCE_REVIEW_THRESHOLD', 0.6),
-      maxAttempts: int('CLASSIFICATION_MAX_ATTEMPTS', 5),
+      // 10 attempts on a 2-minute base, capped at 30 minutes, spans roughly
+      // six hours of provider downtime before a transaction settles.
+      maxAttempts: int('CLASSIFICATION_MAX_ATTEMPTS', 10),
+      retryBaseMs: int('CLASSIFICATION_RETRY_BASE_MS', 120_000),
+      retryMaxMs: int('CLASSIFICATION_RETRY_MAX_MS', 1_800_000),
       circuitBreakerFailureThreshold: int('CIRCUIT_BREAKER_FAILURE_THRESHOLD', 5),
       circuitBreakerResetMs: int('CIRCUIT_BREAKER_RESET_MS', 30_000),
     },

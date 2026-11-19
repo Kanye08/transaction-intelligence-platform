@@ -34,12 +34,8 @@ export class ClassificationService {
     return this.provider.name;
   }
 
-  /**
-   * Classifies one transaction and persists the decision.
-   *
-   * Called by the background worker, never by the ingestion path. Returns
-   * whether the work should be retried so the worker can schedule it.
-   */
+  /** Called by the worker, never by ingestion. Returns whether the work should
+   *  be retried so the worker can schedule it. */
   async classifyTransaction(
     organisationId: string,
     transactionId: string,
@@ -55,8 +51,8 @@ export class ClassificationService {
 
     const currentStatus = transaction.classificationStatus as ClassificationStatus;
 
-    // A human has already decided. Automation stops here - this is the check
-    // that stops a delayed job from silently reverting a correction.
+    // A human has already decided: this is the check that stops a delayed job
+    // from reverting a correction.
     if (currentStatus === 'MANUAL') {
       return {
         applied: false,
@@ -115,10 +111,8 @@ export class ClassificationService {
     };
   }
 
-  /**
-   * Writes the decision and its audit event atomically, guarded by the row
-   * version so a stale job cannot overwrite a newer decision.
-   */
+  /** Decision and audit event in one transaction, guarded by the row version so
+   *  a stale job cannot overwrite a newer decision. */
   private async persist(
     organisationId: string,
     input: {
@@ -155,6 +149,21 @@ export class ClassificationService {
 
       if (updated.count === 0) return false;
 
+      // Retries after a degraded provider re-derive the same answer. Appending
+      // an identical event each time turns the history a customer reads into
+      // noise, so only an actual change is recorded.
+      const last = await tx.classificationEvent.findFirst({
+        where: { transactionId: input.transactionId },
+        orderBy: { createdAt: 'desc' },
+      });
+      const unchanged =
+        last !== null &&
+        last.newCategory === input.result.category &&
+        last.source === input.result.source &&
+        last.confidence === input.result.confidence;
+
+      if (unchanged) return true;
+
       await tx.classificationEvent.create({
         data: {
           organisationId,
@@ -188,6 +197,7 @@ export class ClassificationService {
         organisationId: user.organisationId,
         type: 'CLASSIFY_TRANSACTION',
         payload: JSON.stringify({ transactionId, requestedBy: user.userId }),
+        maxAttempts: this.config.classification.maxAttempts,
       },
     });
   }

@@ -10,11 +10,9 @@ import { Prisma } from '@prisma/client';
 import type { Request, Response } from 'express';
 
 /**
- * RFC 7807-style error responses.
- *
- * Every failure leaves the API in the same shape, carries the request id for
- * correlation, and never leaks stack traces, SQL or provider internals to the
- * client. Unexpected errors are logged in full server-side.
+ * RFC 7807 error responses: every failure has the same shape, carries the
+ * request id, and never leaks stack traces, SQL or provider internals. The full
+ * error is logged server-side.
  */
 export interface ProblemDetails {
   type: string;
@@ -118,9 +116,8 @@ export class ProblemDetailsFilter implements ExceptionFilter {
       };
     }
 
-    // Errors thrown by Express middleware (body parser, CORS) follow the
-    // http-errors shape rather than Nest's, and would otherwise all surface
-    // as 500s - a malformed or oversized body is a client error.
+    // Express middleware (body parser, CORS) throws http-errors, not Nest
+    // exceptions; a malformed or oversized body is a client error, not a 500.
     if (isHttpError(exception)) {
       const status = exception.status;
       return {

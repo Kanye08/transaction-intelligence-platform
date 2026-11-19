@@ -1,15 +1,12 @@
 import { Money } from '../../common/money/money';
 
 /**
- * Pure statistics behind the review rules.
- *
- * Kept free of Prisma and Nest so the thresholds can be unit tested directly -
- * these are the numbers a finance team will argue with, so they need to be
- * inspectable and explainable rather than buried in a query.
+ * The statistics behind the review rules, kept free of Prisma and Nest so the
+ * thresholds can be unit tested directly - these are the numbers a finance team
+ * will argue with.
  *
  * Money stays in BigInt kobo. The standard deviation is computed in floating
- * point, deliberately and only to *decide* whether to flag; no monetary value
- * is ever produced from a float.
+ * point only to decide whether to flag; no monetary value comes from a float.
  */
 
 export interface LargeAmountVerdict {
@@ -25,12 +22,10 @@ export interface LargeAmountVerdict {
 }
 
 /**
- * Flags an amount that sits more than `sigma` standard deviations above the
- * historical mean for comparable transactions.
- *
- * The minimum sample size is the important part: with five transactions of
- * history, "unusual" is meaningless and every sixth payment would be flagged.
- * Below the minimum this returns no verdict at all rather than a misleading one.
+ * Flags an amount more than `sigma` standard deviations above the historical
+ * mean. The minimum sample size is the important part: with five transactions of
+ * history "unusual" is meaningless, so below it there is no verdict at all
+ * rather than a misleading one.
  */
 export function assessLargeAmount(
   amountMinor: bigint,
@@ -53,8 +48,7 @@ export function assessLargeAmount(
 
   const mean = Money.mean(historyMinor);
 
-  // Variance over the sample, in kobo squared. Scaled through Number only to
-  // take the square root; the result is converted straight back to BigInt.
+  // Variance in kobo squared; through Number only to take the square root.
   const varianceFloat =
     historyMinor.reduce((acc, value) => {
       const delta = Number(value - mean);
@@ -65,8 +59,7 @@ export function assessLargeAmount(
   const threshold = mean + BigInt(Math.round(options.sigma * Number(stdDev)));
   const zScore = stdDev > 0n ? Number(amountMinor - mean) / Number(stdDev) : null;
 
-  // A flat mean with no spread would flag every amount a kobo above average;
-  // require a real deviation before calling something unusual.
+  // A flat history would flag every amount a kobo above average.
   if (stdDev === 0n) {
     return {
       flagged: false,
@@ -103,9 +96,9 @@ export function normaliseDescription(value: string): string {
 }
 
 /**
- * Similarity of two descriptions, as the share of shared words.
- * Jaccard is crude but explainable, which matters more here than precision:
- * a reviewer can see exactly why two lines were called similar.
+ * Share of words two descriptions have in common. Jaccard is crude but
+ * explainable, which matters more here than precision: a reviewer can see
+ * exactly why two lines were called similar.
  */
 export function descriptionSimilarity(a: string, b: string): number {
   const left = new Set(normaliseDescription(a).split(' ').filter(Boolean));

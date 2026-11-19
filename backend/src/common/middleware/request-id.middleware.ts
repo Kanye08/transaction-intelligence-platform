@@ -4,12 +4,8 @@ import type { NextFunction, Request, Response } from 'express';
 export const REQUEST_ID_HEADER = 'x-request-id';
 
 /**
- * Every request gets a correlation id, echoed back on the response and
- * attached to structured logs and error payloads, so a user-reported failure
- * can be traced to a single log line.
- *
- * Registered with app.use() in main.ts: it must run before the logger, ahead
- * of any route matching.
+ * Gives every request a correlation id, echoed on the response and attached to
+ * logs and error payloads. Registered in main.ts ahead of the logger.
  */
 export function requestIdMiddleware(req: Request, res: Response, next: NextFunction): void {
   const incoming = req.headers[REQUEST_ID_HEADER];

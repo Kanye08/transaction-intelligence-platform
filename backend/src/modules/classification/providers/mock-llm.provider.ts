@@ -62,16 +62,11 @@ function sleep(ms: number): Promise<void> {
 }
 
 /**
- * A stand-in for a real LLM.
- *
- * It is deliberately *useful* rather than a stub: it produces plausible,
- * deterministic classifications from the transaction text, and it can be told
- * to misbehave in every way a real provider does - slowly, not at all,
- * rate-limited, or with output that is confident nonsense. The failure
- * handling in this codebase is therefore exercised by real code paths rather
- * than described in a README.
- *
- * Set MOCK_LLM_MODE, or call setMode() from a test.
+ * A stand-in for a real LLM, deliberately useful rather than a stub: plausible
+ * deterministic classifications from the transaction text, and the ability to
+ * misbehave in every way a real provider does - slowly, not at all,
+ * rate-limited, or with confident nonsense. Set MOCK_LLM_MODE, or call setMode()
+ * from a test.
  */
 @Injectable()
 export class MockLlmClassificationProvider implements ClassificationProvider {
@@ -136,15 +131,13 @@ export class MockLlmClassificationProvider implements ClassificationProvider {
         break;
     }
 
-    // A configurable share of calls fails even in normal mode, which is what
-    // a real provider does under load.
+    // A share of calls fails even in normal mode, as a real provider does.
     if (this.config.mockLlm.failureRate > 0 && Math.random() < this.config.mockLlm.failureRate) {
       throw new ProviderUnavailableError('Mock provider random failure');
     }
 
     const raw = this.infer(request);
-    // The mock validates its own output through the same gate a real provider
-    // would go through - no shortcuts for being in-process.
+    // Validated through the same gate a real provider would be.
     return parseProviderResult(raw, this.name, this.version, 'LLM');
   }
 
@@ -169,8 +162,7 @@ export class MockLlmClassificationProvider implements ClassificationProvider {
       }
     }
 
-    // Fall back on direction, the way a model with no strong signal would:
-    // money in is probably revenue, money out is unclear.
+    // No signal: money in is probably revenue, money out is unclear.
     if (request.direction === 'INFLOW') {
       return {
         category: 'REVENUE',

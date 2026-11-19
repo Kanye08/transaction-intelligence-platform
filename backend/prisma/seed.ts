@@ -1,16 +1,12 @@
 /**
- * Deterministic seed.
+ * Two complete tenants with ~1,850 realistic NGN transactions, queued for the
+ * real classification and detection pipeline so the app is demonstrable
+ * immediately: a populated dashboard, a browsable ledger, a review queue with
+ * genuine flags.
  *
- * Produces two complete tenants with roughly 2,500 realistic NGN transactions,
- * then runs them through the *real* classification and detection pipeline -
- * the same worker that runs in production mode - so the application is
- * immediately demonstrable: a populated dashboard, a browsable ledger and a
- * review queue with genuine flags.
- *
- * Determinism: all amounts, merchants and the order of events come from a
- * fixed-seed PRNG, so every run produces the same ledger. Dates are anchored
- * to the day the seed runs, so the dashboard always shows a recent window;
- * pass SEED_ANCHOR_DATE=2026-06-30 to pin them too.
+ * Amounts, merchants and ordering come from a fixed-seed PRNG, so every run
+ * produces the same ledger. Dates are anchored to the day the seed runs so the
+ * dashboard shows a recent window; SEED_ANCHOR_DATE pins them too.
  */
 import { PrismaClient } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -147,10 +143,8 @@ function buildTransactions(org: OrganisationSeed, anchor: Date): TransactionSeed
   return rows;
 }
 
-/**
- * Transactions planted to trigger each detection rule, so the review queue is
- * populated and every rule is demonstrable straight after setup.
- */
+/** Planted to trigger each detection rule, so every rule is demonstrable
+ *  straight after setup. */
 function buildAnomalies(
   org: OrganisationSeed,
   anchor: Date,
@@ -280,6 +274,7 @@ async function main(): Promise<void> {
         organisationId: transaction.organisationId,
         type: 'CLASSIFY_TRANSACTION',
         payload: JSON.stringify({ transactionId: transaction.id }),
+        maxAttempts: Number(process.env.CLASSIFICATION_MAX_ATTEMPTS ?? 10),
       })),
     });
   }

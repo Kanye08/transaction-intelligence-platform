@@ -18,16 +18,11 @@ import { RulesClassificationProvider } from './rules.provider';
 export const HYBRID_PROVIDER_NAME = 'hybrid';
 
 /**
- * Rules first, model only when it is worth it.
- *
- * 1. Run the deterministic rules. They are free and instant.
- * 2. If the rule is confident enough, stop. Most transactions stop here.
- * 3. Otherwise ask the LLM, behind a timeout and a circuit breaker.
- * 4. Validate whatever comes back; take it only if it beats the rule result.
- * 5. If the model is unavailable, keep the rule answer and mark it provisional
- *    rather than discarding information or inventing an "Other".
- *
- * This is the cost-control story in code: see README scenario 2.
+ * Rules first, model only when it is worth it: run the deterministic rules, stop
+ * if they are confident enough, otherwise ask the model behind a timeout and a
+ * circuit breaker and take its answer only if it beats the rule result. If the
+ * model is unavailable, keep the rule answer and mark it provisional rather than
+ * inventing an "Other".
  */
 @Injectable()
 export class HybridClassificationProvider implements ClassificationProvider {
@@ -99,8 +94,7 @@ export class HybridClassificationProvider implements ClassificationProvider {
         `LLM classification unavailable (${reason}); falling back to the rules result for transaction ${request.transactionId}`,
       );
 
-      // Degraded, not broken: the rule answer is kept, its low confidence
-      // marks it provisional, and the review queue picks it up.
+      // Degraded, not broken: keep the rule answer for another attempt.
       return {
         ...ruleResult,
         degraded: true,

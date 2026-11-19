@@ -22,12 +22,10 @@ export interface JobWriter {
 }
 
 /**
- * Job creation. The worker that consumes these lives in jobs.worker.ts.
- *
- * Enqueueing takes an optional transaction client: a classification job is
- * written in the same transaction as the transaction row itself, so a
- * committed transaction always has its follow-up work scheduled, and a rolled
- * back one never leaves an orphan job.
+ * Job creation; jobs.worker.ts consumes them. Enqueueing accepts a transaction
+ * client so a job is written in the same transaction as the row that triggered
+ * it: a committed row always has its work scheduled, a rolled back one leaves no
+ * orphan job.
  */
 @Injectable()
 export class JobsService {

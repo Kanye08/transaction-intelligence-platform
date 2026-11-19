@@ -1,15 +1,8 @@
 /**
- * Money.
- *
- * Nigerian Naira has two decimal places, so every amount is held as an integer
- * number of kobo in a BigInt: NGN 12,999.75 is 1299975n. No monetary value is
- * ever a JavaScript number, because 0.1 + 0.2 !== 0.3 and a financial ledger
- * cannot absorb that. Input arrives as a decimal *string* and is parsed
- * digit-by-digit, never through parseFloat, so the binary floating point
- * representation is not involved at any point.
- *
- * The database column is BIGINT; the API exposes the value three ways
- * (decimal string, minor-unit string, formatted string) and never as a number.
+ * Every amount is an integer number of kobo in a BigInt: NGN 12,999.75 is
+ * 1299975n. Nothing monetary is ever a JavaScript number, because 0.1 + 0.2 !==
+ * 0.3 and a ledger cannot absorb that. Input arrives as a decimal string and is
+ * parsed digit-by-digit, so floating point is never involved.
  */
 
 export class MoneyError extends Error {}
@@ -22,9 +15,8 @@ const DECIMAL_PATTERN = /^-?\d{1,19}(\.\d{1,2})?$/;
 
 export const Money = {
   /**
-   * Parses a decimal string such as "12999.75" into kobo (1299975n).
-   * Rejects floats, exponent notation, thousands separators, currency symbols
-   * and fractional kobo, because silently rounding somebody's money is worse
+   * "12999.75" -> 1299975n. Rejects floats, exponent notation, separators,
+   * symbols and fractional kobo: silently rounding someone's money is worse
    * than refusing the input.
    */
   parse(input: string | number | bigint): bigint {
@@ -110,11 +102,8 @@ export const Money = {
     return value < 0n ? -value : value;
   },
 
-  /**
-   * Divides into `parts`, distributing the remainder one kobo at a time so the
-   * parts always add back up to the original amount - no kobo is created or
-   * lost. Used for averages and allocations.
-   */
+  /** Splits into `parts`, spreading the remainder a kobo at a time so the parts
+   *  always add back to the original. */
   allocate(amount: bigint, parts: number): bigint[] {
     if (!Number.isInteger(parts) || parts <= 0) {
       throw new MoneyError('Allocation requires a positive integer number of parts');
@@ -134,10 +123,7 @@ export const Money = {
     });
   },
 
-  /**
-   * Mean of a set of amounts, truncated towards zero. Returns 0n for an empty
-   * set rather than NaN, so callers never have to special-case it.
-   */
+  /** Mean, truncated towards zero. Empty set is 0n rather than NaN. */
   mean(values: bigint[]): bigint {
     if (values.length === 0) return 0n;
     return Money.sum(values) / BigInt(values.length);
@@ -161,8 +147,8 @@ export interface MoneyView {
 export function toMoneyView(minorUnits: bigint, currency = 'NGN'): MoneyView {
   return {
     amount: Money.toDecimalString(minorUnits),
-    // Serialised as a string: JSON has no integer type wide enough, and
-    // JSON.stringify cannot serialise BigInt at all.
+    // A string: JSON has no wide enough integer type, and JSON.stringify cannot
+    // serialise BigInt at all.
     amountMinor: minorUnits.toString(),
     currency,
     formattedAmount: Money.format(minorUnits, currency),
