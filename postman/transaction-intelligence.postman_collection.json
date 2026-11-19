@@ -1,0 +1,802 @@
+{
+  "info": {
+    "name": "Transaction Intelligence Platform",
+    "description": "Multi-tenant transaction ingestion, classification and review.\n\nStart the API with `npm start` (port 3000), then run **Auth > Login** first: it stores the bearer token in the `token` collection variable, and every other request uses it. The organisation is taken from that token, so there is no organisation id to pass anywhere.\n\nRun **Transactions > Import a transaction** before the single-transaction requests: it saves the new id into `transactionId`. **Review > List open flags** does the same for `flagId`.\n\nSwitch tenants by logging in as `bola@abujalogistics.ng` and re-running any request; you will see a different ledger, and the other tenant's ids return 404.",
+    "schema": "https://schema.getpostman.com/json/collection/v2.1.0/collection.json"
+  },
+  "auth": {
+    "type": "bearer",
+    "bearer": [
+      {
+        "key": "token",
+        "value": "{{token}}",
+        "type": "string"
+      }
+    ]
+  },
+  "variable": [
+    {
+      "key": "baseUrl",
+      "value": "http://localhost:3000",
+      "type": "string"
+    },
+    {
+      "key": "email",
+      "value": "ada@lagosfoods.ng",
+      "type": "string"
+    },
+    {
+      "key": "password",
+      "value": "Password123!",
+      "type": "string"
+    },
+    {
+      "key": "token",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "accountId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "transactionId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "flagId",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "idempotencyKey",
+      "value": "demo-key-1",
+      "type": "string"
+    },
+    {
+      "key": "externalReference",
+      "value": "",
+      "type": "string"
+    },
+    {
+      "key": "foreignTransactionId",
+      "value": "",
+      "type": "string"
+    }
+  ],
+  "item": [
+    {
+      "name": "Auth",
+      "item": [
+        {
+          "name": "Login",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('200 with a token', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(body.accessToken).to.be.a('string');",
+                  "});",
+                  "pm.collectionVariables.set('token', body.accessToken);",
+                  "console.log('Signed in as', body.user.email, '/', body.user.organisation.name);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"{{password}}\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Exchanges credentials for a JWT and saves it as the `token` variable. Seeded users: ada@lagosfoods.ng, tunde@lagosfoods.ng, bola@abujalogistics.ng, chidi@abujalogistics.ng, all with password Password123!"
+          }
+        },
+        {
+          "name": "Login with a wrong password",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"email\": \"{{email}}\",\n  \"password\": \"NotThePassword1!\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/login",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "login"
+              ]
+            },
+            "description": "Returns 401. An unknown email returns exactly the same response, so the API cannot be used to find out who has an account."
+          }
+        },
+        {
+          "name": "Current user",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/me",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "me"
+              ]
+            },
+            "description": "The authenticated user and their organisation, resolved from the token."
+          }
+        },
+        {
+          "name": "Logout",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/auth/logout",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "auth",
+                "logout"
+              ]
+            },
+            "description": "Returns 204. Tokens are stateless, so signing out means the client discards the token; this endpoint is where a denylist would go."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Accounts",
+      "item": [
+        {
+          "name": "List accounts",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const accounts = pm.response.json();",
+                  "pm.test('returns this organisation accounts', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  pm.expect(accounts).to.be.an('array').that.is.not.empty;",
+                  "});",
+                  "pm.collectionVariables.set('accountId', accounts[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "accounts"
+              ]
+            },
+            "description": "Accounts belonging to the caller's organisation. Saves the first id as `accountId`."
+          }
+        },
+        {
+          "name": "Get one account",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts/{{accountId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "accounts",
+                "{{accountId}}"
+              ]
+            },
+            "description": "An account id from another organisation returns 404 here, not 403."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Transactions",
+      "item": [
+        {
+          "name": "Import a transaction",
+          "event": [
+            {
+              "listen": "prerequest",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "pm.collectionVariables.set('externalReference', 'PM-' + Date.now());"
+                ]
+              }
+            },
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const body = pm.response.json();",
+                  "pm.test('created and awaiting classification', () => {",
+                  "  pm.response.to.have.status(201);",
+                  "  pm.expect(body.status).to.eql('CREATED');",
+                  "  pm.expect(body.transaction.classification.status).to.eql('PENDING');",
+                  "});",
+                  "pm.test('amount is exact and never a number', () => {",
+                  "  pm.expect(body.transaction.amount).to.eql('12999.75');",
+                  "  pm.expect(body.transaction.amountMinor).to.eql('1299975');",
+                  "});",
+                  "pm.collectionVariables.set('transactionId', body.transaction.id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"externalReference\": \"{{externalReference}}\",\n  \"amount\": \"12999.75\",\n  \"currency\": \"NGN\",\n  \"direction\": \"OUTFLOW\",\n  \"description\": \"MTN VTU airtime purchase\",\n  \"merchant\": \"MTN Nigeria\",\n  \"transactionDate\": \"2026-03-14T09:30:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions"
+              ]
+            },
+            "description": "Stores the transaction and queues classification, returning immediately with status PENDING. Amounts are decimal strings; a JSON number is rejected. `direction` also accepts CREDIT and DEBIT.\n\nSaves the new id as `transactionId`."
+          }
+        },
+        {
+          "name": "Import the same reference again (duplicate)",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"externalReference\": \"{{externalReference}}\",\n  \"amount\": \"12999.75\",\n  \"currency\": \"NGN\",\n  \"direction\": \"OUTFLOW\",\n  \"description\": \"MTN VTU airtime purchase\",\n  \"merchant\": \"MTN Nigeria\",\n  \"transactionDate\": \"2026-03-14T09:30:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions"
+              ]
+            },
+            "description": "Run straight after the previous request. Returns 200 with status DUPLICATE and the existing transaction, because of the unique constraint on (organisation, account, externalReference). No second row is created."
+          }
+        },
+        {
+          "name": "Import with an Idempotency-Key",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              },
+              {
+                "key": "Idempotency-Key",
+                "value": "{{idempotencyKey}}"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"accountId\": \"{{accountId}}\",\n  \"externalReference\": \"PM-IDEM-1\",\n  \"amount\": \"45000.00\",\n  \"direction\": \"OUTFLOW\",\n  \"description\": \"Salary payment for March\",\n  \"transactionDate\": \"2026-03-25T10:00:00.000Z\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions"
+              ]
+            },
+            "description": "Send twice: the second response is the first one replayed, with an `Idempotency-Replayed: true` header and no new transaction.\n\nNow change the amount and send again with the same key: that returns 409 IDEMPOTENCY_KEY_REUSED."
+          }
+        },
+        {
+          "name": "Batch import with partial success",
+          "request": {
+            "method": "POST",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"transactions\": [\n    {\n      \"accountId\": \"{{accountId}}\",\n      \"externalReference\": \"PM-BATCH-1\",\n      \"amount\": \"185000.00\",\n      \"direction\": \"OUTFLOW\",\n      \"description\": \"IKEDC prepaid electricity token\",\n      \"merchant\": \"IKEDC\",\n      \"transactionDate\": \"2026-03-20T08:00:00.000Z\"\n    },\n    {\n      \"accountId\": \"{{accountId}}\",\n      \"externalReference\": \"PM-BATCH-2\",\n      \"amount\": \"2860000.00\",\n      \"direction\": \"INFLOW\",\n      \"description\": \"Paystack settlement for online orders\",\n      \"merchant\": \"Paystack\",\n      \"transactionDate\": \"2026-03-20T09:00:00.000Z\"\n    },\n    {\n      \"accountId\": \"{{accountId}}\",\n      \"externalReference\": \"PM-BATCH-3\",\n      \"amount\": \"100.123\",\n      \"direction\": \"OUTFLOW\",\n      \"description\": \"Fractional kobo, rejected\",\n      \"transactionDate\": \"2026-03-20T10:00:00.000Z\"\n    },\n    {\n      \"accountId\": \"{{accountId}}\",\n      \"externalReference\": \"PM-BATCH-4\",\n      \"amount\": \"5000.00\",\n      \"direction\": \"SIDEWAYS\",\n      \"description\": \"Invalid direction, rejected\",\n      \"transactionDate\": \"2026-03-20T11:00:00.000Z\"\n    }\n  ]\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions/batch",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions",
+                "batch"
+              ]
+            },
+            "description": "Always returns 207. The two valid rows are created; the fractional-kobo row and the bad direction are reported individually with their errors, and do not affect the rest. Up to 500 rows per call."
+          }
+        },
+        {
+          "name": "List transactions",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions?limit=25&includeTotal=true",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions"
+              ],
+              "query": [
+                {
+                  "key": "limit",
+                  "value": "25"
+                },
+                {
+                  "key": "includeTotal",
+                  "value": "true"
+                },
+                {
+                  "key": "cursor",
+                  "value": "",
+                  "disabled": true
+                },
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}",
+                  "disabled": true
+                },
+                {
+                  "key": "direction",
+                  "value": "OUTFLOW",
+                  "disabled": true
+                },
+                {
+                  "key": "category",
+                  "value": "UTILITIES",
+                  "disabled": true
+                },
+                {
+                  "key": "classificationStatus",
+                  "value": "PROVISIONAL",
+                  "disabled": true
+                },
+                {
+                  "key": "review",
+                  "value": "OPEN",
+                  "disabled": true
+                },
+                {
+                  "key": "search",
+                  "value": "IKEDC",
+                  "disabled": true
+                },
+                {
+                  "key": "dateFrom",
+                  "value": "2026-01-01T00:00:00.000Z",
+                  "disabled": true
+                },
+                {
+                  "key": "dateTo",
+                  "value": "2026-12-31T23:59:59.000Z",
+                  "disabled": true
+                },
+                {
+                  "key": "amountMin",
+                  "value": "1000.00",
+                  "disabled": true
+                },
+                {
+                  "key": "amountMax",
+                  "value": "500000.00",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Cursor pagination: take `pageInfo.nextCursor` from the response and send it as `cursor` for the next page. `includeTotal` is opt-in because counting a whole organisation is the expensive part of the query.\n\nThe disabled query parameters are the available filters; enable any combination."
+          }
+        },
+        {
+          "name": "Get one transaction",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions/{{transactionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions",
+                "{{transactionId}}"
+              ]
+            },
+            "description": "Includes the classification block (category, confidence, source, original category) and any review flags with their explanations."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Classification",
+      "item": [
+        {
+          "name": "Correct the category",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"category\": \"UTILITIES\",\n  \"reason\": \"Airtime for field staff, not a general expense\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions/{{transactionId}}/classification",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions",
+                "{{transactionId}}",
+                "classification"
+              ]
+            },
+            "description": "Sets the category by hand. The first automated decision is kept in `originalCategory`, an audit event records who changed it and why, and the status becomes MANUAL so no queued job can overwrite it.\n\nCategories: REVENUE, PAYROLL, SOFTWARE, MARKETING, TRAVEL, UTILITIES, RENT, TAX, TRANSFERS, BANKING_FEES, EQUIPMENT, PROFESSIONAL_SERVICES, OTHER."
+          }
+        },
+        {
+          "name": "Classification history",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions/{{transactionId}}/classification-history",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions",
+                "{{transactionId}}",
+                "classification-history"
+              ]
+            },
+            "description": "Append-only history, oldest first: every automated and manual decision with its source, confidence, provider, actor and reason."
+          }
+        },
+        {
+          "name": "Queue reclassification",
+          "request": {
+            "method": "POST",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions/{{transactionId}}/reclassify",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions",
+                "{{transactionId}}",
+                "reclassify"
+              ]
+            },
+            "description": "Returns 202 and queues a classification job. A transaction a human has corrected stays as it is; the worker skips it."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Review",
+      "item": [
+        {
+          "name": "List open flags",
+          "event": [
+            {
+              "listen": "test",
+              "script": {
+                "type": "text/javascript",
+                "exec": [
+                  "const page = pm.response.json();",
+                  "pm.test('flags come with an explanation', () => {",
+                  "  pm.response.to.have.status(200);",
+                  "  if (page.data.length) pm.expect(page.data[0].explanation).to.be.a('string');",
+                  "});",
+                  "if (page.data.length) pm.collectionVariables.set('flagId', page.data[0].id);"
+                ]
+              }
+            }
+          ],
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/review/flags?status=OPEN&limit=20&offset=0",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "review",
+                "flags"
+              ],
+              "query": [
+                {
+                  "key": "status",
+                  "value": "OPEN"
+                },
+                {
+                  "key": "limit",
+                  "value": "20"
+                },
+                {
+                  "key": "offset",
+                  "value": "0"
+                },
+                {
+                  "key": "rule",
+                  "value": "DUPLICATE_SUSPECTED",
+                  "disabled": true
+                },
+                {
+                  "key": "severity",
+                  "value": "HIGH",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Flagged transactions, highest severity first. Each carries the rule, the explanation and the numbers behind it. Saves the first id as `flagId`.\n\nRules: DUPLICATE_SUSPECTED, UNUSUALLY_LARGE, LOW_CONFIDENCE, UNUSUAL_FREQUENCY."
+          }
+        },
+        {
+          "name": "Review summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/review/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "review",
+                "summary"
+              ]
+            },
+            "description": "Open, resolved and dismissed counts, broken down by rule and severity."
+          }
+        },
+        {
+          "name": "Resolve a flag",
+          "request": {
+            "method": "PATCH",
+            "header": [
+              {
+                "key": "Content-Type",
+                "value": "application/json"
+              }
+            ],
+            "body": {
+              "mode": "raw",
+              "raw": "{\n  \"action\": \"RESOLVE\",\n  \"note\": \"Checked with the supplier, the payment is correct\"\n}"
+            },
+            "url": {
+              "raw": "{{baseUrl}}/api/review/flags/{{flagId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "review",
+                "flags",
+                "{{flagId}}"
+              ]
+            },
+            "description": "`RESOLVE` for a flag that was valid and has been dealt with, `DISMISS` for a false positive. Both record who closed it, when, and the note. Closing an already closed flag returns 400."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Dashboard",
+      "item": [
+        {
+          "name": "Summary",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/dashboard/summary",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "dashboard",
+                "summary"
+              ],
+              "query": [
+                {
+                  "key": "dateFrom",
+                  "value": "2026-01-01T00:00:00.000Z",
+                  "disabled": true
+                },
+                {
+                  "key": "dateTo",
+                  "value": "2026-12-31T23:59:59.000Z",
+                  "disabled": true
+                },
+                {
+                  "key": "accountId",
+                  "value": "{{accountId}}",
+                  "disabled": true
+                }
+              ]
+            },
+            "description": "Inflows, outflows, net cash flow, spending by category, classification status and open flag counts. Every figure is aggregated in the database and returned as exact kobo strings."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Health",
+      "item": [
+        {
+          "name": "Health check",
+          "request": {
+            "auth": {
+              "type": "noauth"
+            },
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/health",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "health"
+              ]
+            },
+            "description": "The only route that does not need a token. Reports API uptime and database connectivity."
+          }
+        }
+      ]
+    },
+    {
+      "name": "Tenant isolation",
+      "item": [
+        {
+          "name": "Another organisation's transaction returns 404",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/transactions/{{foreignTransactionId}}",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "transactions",
+                "{{foreignTransactionId}}"
+              ]
+            },
+            "description": "Log in as bola@abujalogistics.ng, copy any transaction id, then log back in as ada@lagosfoods.ng and set it as `foreignTransactionId`. The answer is 404, the same as for an id that never existed."
+          }
+        },
+        {
+          "name": "An organisation id in the request is ignored",
+          "request": {
+            "method": "GET",
+            "header": [],
+            "url": {
+              "raw": "{{baseUrl}}/api/accounts?organisationId=org_abuja_logistics",
+              "host": [
+                "{{baseUrl}}"
+              ],
+              "path": [
+                "api",
+                "accounts"
+              ],
+              "query": [
+                {
+                  "key": "organisationId",
+                  "value": "org_abuja_logistics"
+                }
+              ]
+            },
+            "description": "Returns the caller's own accounts: the tenant comes from the token, so the parameter has no effect. On endpoints with typed filters, such as /api/transactions, an unknown query parameter is rejected with 400 by request validation instead."
+          }
+        }
+      ]
+    }
+  ]
+}

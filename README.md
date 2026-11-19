@@ -54,6 +54,19 @@ The two organisations have separate accounts, transactions and review queues.
 
 Swagger UI is at `/api/docs`, the spec at `/openapi.json`, and a health check at `/api/health`.
 
+### Postman
+
+[`postman/transaction-intelligence.postman_collection.json`](postman/transaction-intelligence.postman_collection.json)
+covers all 17 endpoints. Import it, run **Auth > Login** first (it stores the token and every other
+request uses it), then **Accounts > List accounts** and **Transactions > Import a transaction**,
+which fill in the account and transaction ids the rest of the requests need. `baseUrl` defaults to
+`http://localhost:3000`.
+
+It is organised to show the behaviour that matters: importing the same reference twice, replaying
+an `Idempotency-Key`, a batch where two rows succeed and two fail, correcting a category and
+reading the history afterwards, and two requests showing that another organisation's data comes
+back as 404.
+
 ## How it works
 
 A request arrives with a bearer token. A global guard verifies it and puts the user and their
